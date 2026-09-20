@@ -32,12 +32,15 @@ def load_tf(path: str):
     with open(path, newline="", encoding="utf-8") as f:
         for r in csv.DictReader(f):
             try:
-                t.append(int(float(r["time"])) if "." in str(r["time"]) else int(r["time"]))
+                v = int(float(r["time"]))
             except ValueError:
                 continue
-            # time pode estar em ms (13 dígitos) ou s (10 dígitos)
-            if t[-1] < 10_000_000_000:
-                t[-1] *= 1000
+            # normaliza precisão: s (10d) -> ms; us (16d) -> ms; ms (13d) mantém
+            if v >= 10**15:
+                v //= 1000
+            elif v < 10_000_000_000:
+                v *= 1000
+            t.append(v)
             o.append(float(r.get("open", r["close"])))
             c.append(float(r["close"]))
     return t, o, c
@@ -51,6 +54,7 @@ def last_closed(close_times, entry_close_ms):
 def simulate(m15, h4, d1, m5, balance, expiry_bars, rsi_per, ob, os_,
              macro_ema, prior=0.58, fraction=0.25, max_risk=0.02,
              min_stake=1.0, lookback=50, prior_weight=20.0,
+             m5_confirm=True, bias_mode="agree",
              i0=0, i1=None):
     m15t, m15o, m15c = m15
     h4t, _, h4c = h4
@@ -80,21 +84,32 @@ def simulate(m15, h4, d1, m5, balance, expiry_bars, rsi_per, ob, os_,
         kd = last_closed(d1ct, entry_close)
         if kh < macro_ema or kd < macro_ema:
             continue
-        long_bias = h4c[kh] > h4e[kh] and d1c[kd] > d1e[kd]
-        short_bias = h4c[kh] < h4e[kh] and d1c[kd] < d1e[kd]
+        h4_long = h4c[kh] > h4e[kh]
+        h4_short = h4c[kh] < h4e[kh]
+        d1_long = d1c[kd] > d1e[kd]
+        d1_short = d1c[kd] < d1e[kd]
+        if bias_mode == "either":
+            long_bias = h4_long or d1_long
+            short_bias = h4_short or d1_short
+            if long_bias and short_bias:
+                continue  # conflito macro: sem trade
+        else:  # agree: sniper, exige D1+H4 alinhados
+            long_bias = h4_long and d1_long
+            short_bias = h4_short and d1_short
         if long_bias and rl < os_:
             signal = "call"
         elif short_bias and rl > ob:
             signal = "put"
         else:
             continue
-        km = last_closed(m5ct, entry_close)
-        if km < 0:
-            continue
-        if signal == "call" and not (m5c[km] > m5o[km]):
-            continue
-        if signal == "put" and not (m5c[km] < m5o[km]):
-            continue
+        if m5_confirm:
+            km = last_closed(m5ct, entry_close)
+            if km < 0:
+                continue
+            if signal == "call" and not (m5c[km] > m5o[km]):
+                continue
+            if signal == "put" and not (m5c[km] < m5o[km]):
+                continue
 
         nn = len(history)
         p = (prior * prior_weight + sum(1 for w in history if w)) / (prior_weight + nn) if nn else prior
@@ -172,6 +187,8 @@ def main():
     ap.add_argument("--ob", type=float, default=70)
     ap.add_argument("--os", type=float, default=30)
     ap.add_argument("--macro-ema", type=int, default=50)
+    ap.add_argument("--m5-confirm", type=int, default=1)
+    ap.add_argument("--bias-mode", default="agree", choices=["agree", "either"])
     ap.add_argument("--grid-is", type=int, default=0)
     ap.add_argument("--split", type=int, default=0)
     a = ap.parse_args()
@@ -184,27 +201,55 @@ def main():
     m5, h4, d1 = load_tf(a.m5), load_tf(a.h4), load_tf(a.d1)
     print(f"[DATA] M15:{len(m15[0])} M5:{len(m5[0])} H4:{len(h4[0])} D1:{len(d1[0])}")
 
-    base = dict(balance=a.balance, ob=a.ob, os_=a.os, macro_ema=a.macro_ema)
+    base = dict(balance=a.balance, ob=a.ob, os_=a.os, macro_ema=a.macro_ema,
+                m5_confirm=bool(a.m5_confirm), bias_mode=a.bias_mode)
     cut = int(len(m15[0]) * 0.70)
 
     if a.grid_is:
         print(f"== IS (70%, {cut} candles M15) ==")
+        gbase = dict(balance=a.balance)
         ranked = []
-        for exp in (1, 2, 3, 4):
-            for per in (10, 14, 21):
-                r = simulate(m15, h4, d1, m5, expiry_bars=exp, rsi_per=per,
-                             i0=0, i1=cut, **base)
-                print(f"exp={exp*15}m RSI{per}: trades={r['trades']} "
-                      f"WR={r['winrate']:.2%} lucro={r['profit']:+.2f}")
-                ranked.append(((exp, per), r))
-        ranked.sort(key=lambda x: x[1]["profit"], reverse=True)
-        print("\n[TOP3 IS]")
-        for (exp, per), r in ranked[:3]:
-            print(f"  exp={exp*15}m RSI{per}: lucro={r['profit']:+.2f} WR={r['winrate']:.2%}")
+        total = 2 * 3 * 3 * 2 * 2 * 2
+        done = 0
+        for exp in (1, 2):
+            for per in (8, 10, 14):
+                for ob, os_ in ((70, 30), (75, 25), (65, 35)):
+                    for mema in (21, 50):
+                        for m5c in (True, False):
+                            for bias in ("agree", "either"):
+                                r = simulate(m15, h4, d1, m5, expiry_bars=exp,
+                                             rsi_per=per, ob=ob, os_=os_,
+                                             macro_ema=mema, m5_confirm=m5c,
+                                             bias_mode=bias, i0=0, i1=cut, **gbase)
+                                done += 1
+                                tag = (f"exp={exp*15}m RSI{per} {os_}/{ob} "
+                                       f"mEMA{mema} m5={int(m5c)} {bias}")
+                                print(f"[{done}/{total}] {tag}: n={r['trades']} "
+                                      f"WR={r['winrate']:.2%} lucro={r['profit']:+.2f}")
+                                ranked.append((tag, dict(exp=exp, per=per, ob=ob,
+                                                         os_=os_, mema=mema, m5c=m5c,
+                                                         bias=bias), r))
+        ranked.sort(key=lambda x: x[2]["profit"], reverse=True)
+        print("\n[TOP5 IS]")
+        for tag, _, r in ranked[:5]:
+            print(f"  {tag}: lucro={r['profit']:+.2f} WR={r['winrate']:.2%} n={r['trades']}")
+        print("\n== OOS 30% do TOP3 ==")
+        for tag, kw, _ in ranked[:3]:
+            r_oos = simulate(m15, h4, d1, m5, expiry_bars=kw["exp"],
+                             rsi_per=kw["per"], ob=kw["ob"], os_=kw["os_"],
+                             macro_ema=kw["mema"], m5_confirm=kw["m5c"],
+                             bias_mode=kw["bias"], i0=cut, i1=len(m15[0]),
+                             **gbase)
+            print(f"\n[TOP IS] {tag}")
+            show(r_oos, "OOS")
+            verdict(r_oos)
         return
 
     r = simulate(m15, h4, d1, m5, expiry_bars=a.expiry, rsi_per=a.rsi, **base)
     show(r, f"FULL exp={a.expiry*15}m RSI{a.rsi}")
+    months = sorted(r["monthly"].items())
+    pos = sum(1 for _, v in months if v > 0)
+    print(f"[MESES] {pos}/{len(months)} positivos")
     if a.split:
         r_is = simulate(m15, h4, d1, m5, expiry_bars=a.expiry, rsi_per=a.rsi,
                         i0=0, i1=cut, **base)
