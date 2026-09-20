@@ -1,0 +1,113 @@
+{
+  "modelId": "MODEL_H010_BTCUSDT_ORDERFLOW_ABSORPTION",
+  "version": "1.0.0",
+  "registeredAt": "2026-09-17T00:55:00.000Z",
+  "state": "04_PAPER/DEMO",
+  "hypothesis": {
+    "hypothesisId": "HYPOTHESIS_010",
+    "researchFamily": "FAMILY_05_MULTI_TIMEFRAME_EXTREMES",
+    "title": "Macro-Conditioned Order Flow Absorption & Terminal Microstructure Reversion on BTC/USDT",
+    "specSha256": "9df1b6cdfe35ff42ab8de80f61ee15cbed52592688de36b600c0192cf814121e"
+  },
+  "instrument": {
+    "asset": "BTCUSDT",
+    "venue": "BINANCE_SPOT",
+    "provider": "feed",
+    "timeframe": "1m_with_5s_micro_and_1440m_macro",
+    "expirySeconds": 60,
+    "expiryBars": 1,
+    "referencePayout": 0.85,
+    "breakevenHurdle": 0.5405405405405405
+  },
+  "implementation": {
+    "entrypoint": "src/strategy/models/OrderFlowAbsorptionModel.js",
+    "negativeControl": "src/strategy/models/ReversedOrderFlowAbsorptionModel.js",
+    "sourceCodeSha256": "247f94bd5e1f478c6af275c13e3bf5f99831f82f81d3adacd78487cff611272c",
+    "parameters": {
+      "atrPeriod": 14,
+      "stretchMultiplier": 1.5,
+      "macroPeriod": 1440,
+      "macroTolerancePct": 0.015,
+      "minWickRatio": 0.35,
+      "maxTimingSec": 50,
+      "absorptionShareThreshold": 0.45,
+      "expirySeconds": 60
+    }
+  },
+  "validationSummary": {
+    "datasetId": "DATASET_BTCUSDT_5S_001",
+    "partition": "OUT_OF_SAMPLE_BLIND_153_DAYS",
+    "sampleSizeResolved": 147,
+    "realizedWinRate": 0.62585,
+    "wilsonLowerBound95": 0.545356,
+    "wilsonUpperBound95": 0.699935,
+    "surplusBasisPoints": 48.15,
+    "expectedValuePerUnit": 0.157823,
+    "monthlyConsistency": "5_OF_5_MONTHS_PROFITABLE",
+    "directionalBreakdown": {
+      "callWinRate": 0.583333,
+      "callSample": 84,
+      "putWinRate": 0.68254,
+      "putSample": 63,
+      "deltaPercentagePoints": 9.92
+    },
+    "reversedControlWinRate": 0.37415,
+    "alphaOverReversedPp": 25.17,
+    "alphaOverBaselinePp": 12.61
+  },
+  "governanceConsensusSignatures": {
+    "chiefRiskOfficer": {
+      "verdict": "APPROVED",
+      "artifact": "research/reports/EXP_048/RISK_DECISION_048.json",
+      "statement": "Statistical evidence gate cleared. Constitutional Invariant 4 satisfied: W_low (54.54%) > P_BE (54.05%) by +48.15 bps on N=147 across 153 OOS days."
+    },
+    "chiefTechnologyOfficer": {
+      "verdict": "APPROVED",
+      "artifact": "tests/adversarial/048_adversarial_h010.test.js",
+      "statement": "Architectural determinism, zero lookahead leakage, and order flow absorption guards verified. All 69 test suites pass."
+    },
+    "experimentController": {
+      "verdict": "VERIFIED",
+      "artifact": "research/reports/EXP_048/PROVENANCE_RECEIPT_048.json",
+      "statement": "Immutable dataset and frozen code hashes cryptographically verified. Provenance intact."
+    },
+    "chiefExecutiveOfficer": {
+      "verdict": "MANDATE_AUTHORIZED",
+      "statement": "Model H010 promoted to Candidate Model Registry as primary crypto microstructure champion. Authorized for Shadow/Paper execution."
+    }
+  },
+  "deploymentGates": {
+    "currentDataTier": "LEVEL_1_RESEARCH_GRADE",
+    "promotionToPaperDemo": "AUTHORIZED",
+    "promotionToLiveProduction": "BLOCKED_PENDING_BROKER_EXECUTION_FIDELITY",
+    "liveGatePrerequisite": "Bridge to live IQ Option BTC/USD or Binance Options execution, verifying latency budget < 250ms and zero quote slippage."
+  },
+  "paperDeployment": {
+    "specId": "SPEC_PAPER_H010",
+    "specVersion": "1.1.0",
+    "specSha256": "9c78a451cabf20512fbac74733c5ed8e975181b88686b6eBA2EFA92DE45CEB70",
+    "parentSpecVersion": "1.0.0",
+    "parentSpecSha256": "cabb576f30e4ab994e216064f0915ee6ca43aa5231f7ef1c0dec71aefc2f9c71",
+    "parentFreezeCommit": "a5fad01d53b601648cdbdd72f34c49a32c0a7d63",
+    "hypothesisSpecSha256": "9df1b6cdfe35ff42ab8de80f61ee15cbed52592688de36b600c0192cf814121e",
+    "modelSourceSha256": "247f94bd5e1f478c6af275c13e3bf5f99831f82f81d3adacd78487cff611272c",
+    "supervisor": "scripts/execution/paper_supervisor_h010.js",
+    "supervisorSha256": "49ca56d3d350236a13e90b8ecd792f6394d384117b3e17aa33a0d12baeeff1e9",
+    "gitCommit": "9ae22bb647038ed7c0e8d3dff28d8776a0882fce",
+    "testEvidence": "5 suites 25/25 green (PaperSupervisor_H010 7, ModelRegistry_H010 6, LiveShadowExecutor_H010 2, PaperExecutionBridge 5, 048_adversarial_h010 5) at 9ae22bb",
+    "deployTimestamp": "2026-09-17T06:10:22.000Z",
+    "forwardStart": "2026-09-17T06:10:22.000Z",
+    "isEnd": "2024-11-30T23:59:59.000Z",
+    "venue": "BINANCE_SPOT",
+    "asset": "BTCUSDT",
+    "bridgeConfig": {
+      "maxLatencyMs": 250,
+      "payoutRate": 0.85,
+      "defaultStake": 1.0
+    },
+    "ledgerPath": "research/execution/shadow_trades_h010.jsonl",
+    "statusPath": "research/reports/SHADOW_FORWARD_TEST_STATUS_H010.json",
+    "executor": "scripts/execution/live_shadow_executor_h010.js",
+    "provenanceReceipt": "research/reports/PROVENANCE_RECEIPT_PAPER_H010_v1.1.0.json"
+  }
+}
