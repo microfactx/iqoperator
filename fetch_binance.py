@@ -20,12 +20,15 @@ def get_klines(symbol="BTCUSDT", interval="15m", limit=1000, end_time=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=3000)
+    ap.add_argument("--interval", default="15m")
+    ap.add_argument("--symbol", default="BTCUSDT")
     ap.add_argument("--out", default="data/BTCUSDT_M15_real.csv")
     a = ap.parse_args()
 
     pages, end_time = [], None
     while sum(len(p) for p in pages) < a.n:
-        kl = get_klines(limit=min(1000, a.n - sum(len(p) for p in pages)), end_time=end_time)
+        kl = get_klines(symbol=a.symbol, interval=a.interval,
+                        limit=min(1000, a.n - sum(len(p) for p in pages)), end_time=end_time)
         if not kl:
             break
         pages.append(kl)
@@ -41,9 +44,11 @@ def main():
         for k in klines:
             w.writerow([k[0], k[1], k[2], k[3], k[4]])
     import datetime
+    tf_ms = {"1m": 60000, "5m": 300000, "15m": 900000, "1h": 3600000,
+             "4h": 4 * 3600000, "1d": 86400000}.get(a.interval, 900000)
     t0 = datetime.datetime.fromtimestamp(klines[0][0] / 1000).strftime("%Y-%m-%d")
     t1 = datetime.datetime.fromtimestamp(klines[-1][0] / 1000).strftime("%Y-%m-%d")
-    print(f"[OK] {len(klines)} candles M15 {t0} -> {t1} em {a.out}")
+    print(f"[OK] {len(klines)} candles {a.interval} {t0} -> {t1} em {a.out}")
 
 
 if __name__ == "__main__":
