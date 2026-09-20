@@ -35,7 +35,7 @@ class Bot:
             os.makedirs(os.path.dirname(cfg.TRADE_LOG) or ".", exist_ok=True)
             with open(cfg.TRADE_LOG, "w", newline="", encoding="utf-8") as f:
                 csv.writer(f).writerow(
-                    ["time", "signal", "rsi_m15", "payout", "winrate",
+                    ["time", "signal", "info", "payout", "winrate",
                      "kelly", "stake", "profit", "balance"])
 
     def _trade_log(self, row: list):
@@ -118,7 +118,7 @@ class Bot:
             log.error(f"check_win falhou id={order_id}: {e}")
             return 0.0
 
-    def update_result(self, signal: str, rsi: float, payout: float,
+    def update_result(self, signal: str, info: object, payout: float,
                       p: float, kfull: float, stake: float, profit: float):
         self.profit += profit
         won = profit > 0
@@ -129,7 +129,7 @@ class Bot:
                                prior_weight=cfg.KELLY_PRIOR_WEIGHT)
         log.info(f"{tag} {profit:+.2f} | Sessão {self.profit:+.2f} | saldo {balance} | wr {wr:.2f}")
         self._trade_log([datetime.now().isoformat(timespec="seconds"), signal,
-                         round(rsi, 2), round(payout, 4), round(p, 4),
+                         info, round(payout, 4), round(p, 4),
                          kfull, stake, round(profit, 2), balance])
 
     def stop(self) -> bool:
@@ -189,16 +189,19 @@ class Bot:
                             continue
 
                     signal = get_signal(cfg.STRATEGY, df, cfg, df_h1)
-                    last_rsi = float(rsi_series(df["close"], cfg.RSI_PERIOD).iloc[-1])
+                    if cfg.STRATEGY == "donchian_fade":
+                        info: object = f"DC{cfg.DONCHIAN_N}"
+                    else:
+                        info = round(float(rsi_series(df["close"], cfg.RSI_PERIOD).iloc[-1]), 1)
                     if not signal:
                         time.sleep(15)
                         continue
 
                     stake, p, kfull = self.calc_stake(payout)
-                    log.info(f"SINAL {signal.upper()} RSI={last_rsi:.1f} payout={payout:.2f} "
+                    log.info(f"SINAL {signal.upper()} {info} payout={payout:.2f} "
                              f"p={p:.2f} kelly={kfull:.3f} stake={stake:.2f}")
                     profit = self.trade(signal, stake)
-                    self.update_result(signal, last_rsi, payout, p, kfull, stake, profit)
+                    self.update_result(signal, info, payout, p, kfull, stake, profit)
                     errors = 0
                     time.sleep(5)
                 except KeyboardInterrupt:

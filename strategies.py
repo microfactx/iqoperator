@@ -132,6 +132,22 @@ def rsi_mtf_pullback_signal(df_m15: pd.DataFrame, df_h1: pd.DataFrame,
     return None
 
 
+def donchian_fade_signal(df: pd.DataFrame, n: int = 20) -> str | None:
+    """Fade de rompimento Donchian: close acima da máxima dos últimos n
+    candles (excluindo o atual) -> PUT; abaixo da mínima -> CALL.
+    Regra idêntica à validada (IS+OOS+ano fresco). df.iloc[-1] = candle fechado."""
+    if len(df) < n + 2:
+        return None
+    hi = float(df["high"].iloc[-n - 1:-1].max())
+    lo = float(df["low"].iloc[-n - 1:-1].min())
+    close = float(df["close"].iloc[-1])
+    if close > hi:
+        return "put"
+    if close < lo:
+        return "call"
+    return None
+
+
 def ema_cross_signal(df: pd.DataFrame, fast: int = 9, slow: int = 21,
                       rsi_period: int = 14, overbought: float = 70,
                       oversold: float = 30) -> str | None:
@@ -165,6 +181,8 @@ def ema_cross_signal(df: pd.DataFrame, fast: int = 9, slow: int = 21,
 
 
 def get_signal(strategy: str, df: pd.DataFrame, cfg, df_htf: pd.DataFrame | None = None) -> str | None:
+    if strategy == "donchian_fade":
+        return donchian_fade_signal(df, n=cfg.DONCHIAN_N)
     if strategy == "rsi_mtf_pullback":
         return rsi_mtf_pullback_signal(
             df, df_htf, period=cfg.RSI_PERIOD,
