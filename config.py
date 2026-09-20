@@ -52,7 +52,7 @@ HTF_COUNT = _get_int("HTF_COUNT", 100)
 HTF_EMA = _get_int("HTF_EMA", 50)
 # RSI_REQUIRE_EXIT=0 (zona) = modo validado; 1 = só saída da zona
 RSI_REQUIRE_EXIT = os.getenv("RSI_REQUIRE_EXIT", "0") == "1"
-LOG_FILE = os.getenv("LOG_FILE", "bot.log")
+LOG_FILE = os.getenv("LOG_FILE", "data/bot.log")
 TRADE_LOG = os.getenv("TRADE_LOG", "data/trades_live.csv")
 EMA_FAST = _get_int("EMA_FAST", 9)
 EMA_SLOW = _get_int("EMA_SLOW", 21)
