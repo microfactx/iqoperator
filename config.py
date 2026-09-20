@@ -1,0 +1,60 @@
+"""Config central do robô - lê do .env"""
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+def _get_float(key: str, default: float) -> float:
+    try:
+        return float(os.getenv(key, str(default)))
+    except ValueError:
+        return default
+
+def _get_int(key: str, default: int) -> int:
+    try:
+        return int(os.getenv(key, str(default)))
+    except ValueError:
+        return default
+
+EMAIL = os.getenv("IQ_EMAIL", "")
+PASSWORD = os.getenv("IQ_PASSWORD", "")
+BALANCE_TYPE = os.getenv("IQ_BALANCE_TYPE", "PRACTICE").upper()  # PRACTICE | REAL
+
+ASSET = os.getenv("IQ_ASSET", "BTCUSD")
+TIMEFRAME = _get_int("IQ_TIMEFRAME", 900)  # segundos: 900 = M15
+EXPIRATION = _get_int("IQ_EXPIRATION", 15)  # minutos p/ binária (igual ao M15)
+AMOUNT = _get_float("IQ_AMOUNT", 2.0)
+PAYOUT_MIN = _get_float("IQ_PAYOUT_MIN", 0.70)
+CANDLE_COUNT = _get_int("IQ_CANDLE_COUNT", 120)
+
+# Kelly fracionário (substitui valor fixo quando USE_KELLY=1)
+# Breakeven p/ payout 0.80 = 1/1.8 = 0.5556. Prior 0.58 = edge pequeno e conservador.
+USE_KELLY = os.getenv("USE_KELLY", "1") == "1"
+KELLY_PRIOR = _get_float("KELLY_PRIOR", 0.58)  # winrate inicial estimado
+KELLY_FRACTION = _get_float("KELLY_FRACTION", 0.25)  # 0.25 = quarter-kelly (conservador)
+KELLY_MAX_RISK = _get_float("KELLY_MAX_RISK", 0.02)  # teto 2% da banca
+KELLY_MIN = _get_float("KELLY_MIN", 1.0)
+KELLY_LOOKBACK = _get_int("KELLY_LOOKBACK", 50)
+KELLY_PRIOR_WEIGHT = _get_float("KELLY_PRIOR_WEIGHT", 20.0)  # peso bayesiano do prior
+KELLY_PAYOUT_DEFAULT = _get_float("KELLY_PAYOUT_DEFAULT", 0.87)
+
+STOP_WIN = _get_float("IQ_STOP_WIN", 50.0)
+STOP_LOSS = _get_float("IQ_STOP_LOSS", 30.0)
+MAX_MARTINGALE = _get_int("IQ_MAX_MARTINGALE", 2)
+MARTINGALE_MULTIPLIER = _get_float("IQ_MARTINGALE_MULTIPLIER", 2.0)
+
+STRATEGY = os.getenv("STRATEGY", "rsi_mtf_pullback")
+TREND_EMA = _get_int("TREND_EMA", 200)
+# Higher timeframe p/ setup MTF (H1 = 3600s). HTF_EMA = viés (50 = validado no backtest 1y)
+HTF_TIMEFRAME = _get_int("HTF_TIMEFRAME", 3600)
+HTF_COUNT = _get_int("HTF_COUNT", 100)
+HTF_EMA = _get_int("HTF_EMA", 50)
+# RSI_REQUIRE_EXIT=0 (zona) = modo validado; 1 = só saída da zona
+RSI_REQUIRE_EXIT = os.getenv("RSI_REQUIRE_EXIT", "0") == "1"
+LOG_FILE = os.getenv("LOG_FILE", "bot.log")
+TRADE_LOG = os.getenv("TRADE_LOG", "data/trades_live.csv")
+EMA_FAST = _get_int("EMA_FAST", 9)
+EMA_SLOW = _get_int("EMA_SLOW", 21)
+RSI_PERIOD = _get_int("RSI_PERIOD", 14)
+RSI_OVERBOUGHT = _get_float("RSI_OVERBOUGHT", 70)
+RSI_OVERSOLD = _get_float("RSI_OVERSOLD", 30)

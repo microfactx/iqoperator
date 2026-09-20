@@ -1,0 +1,5 @@
+# IQOption Robot - BTCUSD Binárias
+iqoptionapi
+python-dotenv
+pandas
+numpy
