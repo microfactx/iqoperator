@@ -1,5 +1,3 @@
-"use client"
-
 /**
  * Utility function to merge class names (shadcn/ui pattern)
  * Similar to clsx but simpler for Tailwind CSS
