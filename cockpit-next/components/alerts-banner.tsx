@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { BellRing } from "lucide-react"
+import { BellRing, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export interface AlertTrade {
@@ -93,7 +93,7 @@ export function AlertsBanner({ trades, winrate, alive, className }: AlertsBanner
       items.push({
         key: "ok",
         color: "#3DD68C",
-        text: "Tudo dentro dos parâmetros ✓",
+        text: "Tudo dentro dos parâmetros",
       })
     }
 
@@ -106,10 +106,14 @@ export function AlertsBanner({ trades, winrate, alive, className }: AlertsBanner
       <div className="flex flex-col gap-2">
         {alerts.map((alert) => (
           <div key={alert.key} className="flex items-center gap-2 text-xs">
-            <span
-              className="inline-block h-2 w-2 rounded-full shrink-0"
-              style={{ backgroundColor: alert.color }}
-            />
+            {alert.key === "ok" ? (
+              <Check size={12} className="shrink-0" style={{ color: alert.color }} />
+            ) : (
+              <span
+                className="inline-block h-2 w-2 rounded-full shrink-0"
+                style={{ backgroundColor: alert.color }}
+              />
+            )}
             <span>{alert.text}</span>
           </div>
         ))}

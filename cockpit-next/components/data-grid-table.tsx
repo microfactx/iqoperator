@@ -1,4 +1,5 @@
 import * as React from "react"
+import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react"
 import { Table, TableBody, TableCell, TableHeader, TableHeaderRow, TableRow } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 
@@ -54,8 +55,8 @@ export function DataGridTable({ columns, data, className }: DataGridTableProps) 
   }
 
   const sortIcon = (key: string) => {
-    if (sortKey !== key) return <span className="ml-1 text-xs opacity-40">⇅</span>
-    return sortDir === "asc" ? <span className="ml-1 text-xs">↑</span> : <span className="ml-1 text-xs">↓</span>
+    if (sortKey !== key) return <ChevronsUpDown size={12} className="ml-1 opacity-40" />
+    return sortDir === "asc" ? <ArrowUp size={12} className="ml-1" /> : <ArrowDown size={12} className="ml-1" />
   }
 
   return (

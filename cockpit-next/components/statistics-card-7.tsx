@@ -1,6 +1,7 @@
 import * as React from "react"
 import { ArrowLeftRight, TrendingUp, Trophy, Wallet } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { NumberTicker } from "@/components/brand/number-ticker"
 
 export interface StatisticsCard7Props {
   title: string
@@ -35,15 +36,17 @@ export function StatisticsCard7({
 }: StatisticsCard7Props) {
   const color = METRIC_COLORS[metric] || METRIC_COLORS.trades
   const valueNum = typeof value === "number" ? value : parseFloat(String(value).replace(",", "."))
-  const formattedValue =
-    metric === "winrate" && !isNaN(valueNum)
-      ? `${(valueNum * 100).toFixed(1)}%`
-      : isNaN(valueNum)
-        ? String(value)
-        : `${valueNum >= 0 && metric === "profit" ? "+" : ""}${valueNum.toLocaleString("pt-BR", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}`
+  const numeric = !isNaN(valueNum)
+  const ticker =
+    metric === "winrate" && numeric ? (
+      <NumberTicker value={valueNum * 100} decimals={1} suffix="%" />
+    ) : numeric ? (
+      <NumberTicker
+        value={valueNum}
+        decimals={2}
+        prefix={valueNum >= 0 && metric === "profit" ? "+" : ""}
+      />
+    ) : null
 
   const isGood = metric === "winrate" ? valueNum >= 0.5348 : metric === "profit" ? valueNum >= 0 : true
   const dotColor = isGood ? "#3DD68C" : "#FF5470"
@@ -63,8 +66,8 @@ export function StatisticsCard7({
           style={{ backgroundColor: dotColor, boxShadow: `0 0 8px ${dotColor}` }}
         />
       </div>
-      <p className="font-semibold text-2xl line-clamp-1" style={{ color }}>
-        {formattedValue}
+      <p className="font-semibold text-2xl line-clamp-1 tabular-nums" style={{ color }}>
+        {ticker ?? String(value)}
       </p>
       {subtitle && <p className="text-xs text-muted mt-1 line-clamp-1">{subtitle}</p>}
     </div>

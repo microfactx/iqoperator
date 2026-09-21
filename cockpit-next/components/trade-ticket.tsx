@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ArrowDownRight, ArrowUpRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Signal = "call" | "put";
@@ -85,10 +86,15 @@ export function TradeTicket({ defaultStake = "2" }: { defaultStake?: string }) {
           onClick={() => handleTrade("call")}
           className={cn(
             "rounded-md bg-success px-3 py-3 text-sm font-semibold text-black",
+            "inline-flex items-center justify-center gap-1.5",
             "transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           )}
         >
-          {loading === "call" ? "Enviando…" : "CALL ▲"}
+          {loading === "call" ? (
+            <><Loader2 size={15} className="animate-spin" /> Enviando…</>
+          ) : (
+            <><ArrowUpRight size={15} /> CALL</>
+          )}
         </button>
         <button
           type="button"
@@ -96,10 +102,15 @@ export function TradeTicket({ defaultStake = "2" }: { defaultStake?: string }) {
           onClick={() => handleTrade("put")}
           className={cn(
             "rounded-md bg-destructive px-3 py-3 text-sm font-semibold text-white",
+            "inline-flex items-center justify-center gap-1.5",
             "transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           )}
         >
-          {loading === "put" ? "Enviando…" : "PUT ▼"}
+          {loading === "put" ? (
+            <><Loader2 size={15} className="animate-spin" /> Enviando…</>
+          ) : (
+            <><ArrowDownRight size={15} /> PUT</>
+          )}
         </button>
       </div>
 

@@ -1,6 +1,7 @@
 "use client"
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { IconCall, IconPut } from "./icons"
 
 // Ticker tape (Magic UI Marquee + Kibo Ticker, MIT — port CSS puro)
 // Uso: <TickerTape items={[{symbol, price, chg}]} />
@@ -26,8 +27,8 @@ export function TickerTape({ items, className }: { items: TickerItem[]; classNam
             <span className="font-bold text-foreground mono">{t.symbol}</span>
             <span className="text-muted mono">{t.price}</span>
             {t.chg !== undefined && t.chg !== 0 && (
-              <span className={cn("font-semibold mono", t.chg >= 0 ? "text-success" : "text-destructive")}>
-                {t.chg >= 0 ? "▲" : "▼"} {Math.abs(t.chg).toFixed(2)}%
+              <span className={cn("inline-flex items-center gap-1 font-semibold mono", t.chg >= 0 ? "text-success" : "text-destructive")}>
+                {t.chg >= 0 ? <IconCall size={12} /> : <IconPut size={12} />} {Math.abs(t.chg).toFixed(2)}%
               </span>
             )}
           </span>

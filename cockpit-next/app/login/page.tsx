@@ -1,6 +1,7 @@
 import { Chrome } from "lucide-react";
 import { Brand } from "@/components/brand/logo";
 import { StatusPill } from "@/components/brand/status-pill";
+import { BackgroundBeams } from "@/components/brand/background-beams";
 
 export const metadata = {
   title: "Login",
@@ -9,8 +10,9 @@ export const metadata = {
 
 export default function LoginPage() {
   return (
-    <main className="relative z-10 flex min-h-screen items-center justify-center px-4 py-12">
-      <div className="w-full max-w-sm rounded-xl border border-border bg-surface p-8">
+    <main className="relative z-10 flex min-h-screen items-center justify-center overflow-hidden px-4 py-12">
+      <BackgroundBeams className="opacity-70" />
+      <div className="relative w-full max-w-sm rounded-xl border border-border bg-surface/90 p-8 backdrop-blur">
         <div className="flex flex-col items-center text-center">
           <Brand />
           <p className="mt-4 text-sm text-muted">
