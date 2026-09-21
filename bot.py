@@ -28,6 +28,12 @@ class Bot:
         self.api = IQ_Option(cfg.EMAIL, cfg.PASSWORD)
         self.asset = cfg.ASSET
         self.profit = 0.0
+        self.buys_attempted = 0
+        self.buys_rejected = 0
+        self.last_signal = None
+        self.last_payout = None
+        self.last_candle_key = None
+        self.last_check = None
         self.history: deque[bool] = deque(maxlen=cfg.KELLY_LOOKBACK)
         self.martingale_step = 0
         self.current_amount = cfg.AMOUNT
@@ -115,9 +121,11 @@ class Bot:
         return round(self.current_amount, 2), p, 0.0
 
     def trade(self, action: str, stake: float) -> float | None:
+        self.buys_attempted += 1
         ok, order_id = self.api.buy(stake, self.asset, action, cfg.EXPIRATION)
         if not ok:
-            log.error(f"Buy rejeitado: {order_id} (ativo={self.asset})")
+            self.buys_rejected += 1
+            log.error(f"Buy rejeitado ({self.buys_rejected}/{self.buys_attempted}): {order_id} (ativo={self.asset})")
             return None
         log.info(f"TRADE {action.upper()} {self.asset} M{cfg.EXPIRATION} stake={stake} id={order_id}")
         try:
@@ -141,6 +149,23 @@ class Bot:
                          kfull, stake, round(profit, 2), balance])
         self._write_status()
 
+    def _candle_key(self, df) -> str:
+        """Chave robusta do último candle (várias versões da API usam 'from'/'at'/etc)."""
+        last = df.iloc[-1]
+        for col in ("from", "at", "open_time", "time", "date", "timestamp"):
+            if col in df.columns:
+                try:
+                    v = int(float(last[col]))
+                    if v > 0:
+                        return f"{col}:{v}"
+                except (TypeError, ValueError):
+                    continue
+        # fallback: usa o close (avalia todo loop, sem dedup por tempo)
+        try:
+            return f"noclock:{float(last['close'])}"
+        except (TypeError, ValueError, KeyError):
+            return f"row:{len(df)}"
+
     def _write_status(self):
         try:
             os.makedirs(os.path.dirname(cfg.BOT_STATUS) or ".", exist_ok=True)
@@ -155,6 +180,12 @@ class Bot:
                     "profit_session": round(self.profit, 2),
                     "trades": len(self.history),
                     "winrate": round(empirical_winrate(list(self.history), cfg.KELLY_PRIOR, prior_weight=cfg.KELLY_PRIOR_WEIGHT), 4),
+                    "buys_attempted": self.buys_attempted,
+                    "buys_rejected": self.buys_rejected,
+                    "last_payout": self.last_payout,
+                    "last_signal": self.last_signal,
+                    "last_candle_key": self.last_candle_key,
+                    "last_check": self.last_check,
                 }, f)
         except Exception:
             pass
@@ -203,7 +234,6 @@ class Bot:
         log.info(f"START {self.asset} | {cfg.STRATEGY} RSI({cfg.RSI_PERIOD}) "
                  f"{cfg.RSI_OVERSOLD}/{cfg.RSI_OVERBOUGHT} exit={int(cfg.RSI_REQUIRE_EXIT)} "
                  f"H1_EMA={cfg.HTF_EMA} | Kelly {cfg.KELLY_FRACTION}x teto {cfg.KELLY_MAX_RISK*100:.0f}%")
-        last_candle_time = 0
         errors = 0
 
         try:
@@ -235,13 +265,16 @@ class Bot:
 
                     df = self.candles_df(cfg.TIMEFRAME, cfg.CANDLE_COUNT)
                     if df is None or df.empty:
+                        log.warning(f"Sem candles ({self.asset} M{cfg.EXPIRATION}) — aguardando.")
                         time.sleep(15)
                         continue
-                    candle_time = int(df.iloc[-1].get("from", 0) or 0)
-                    if candle_time == last_candle_time:
+                    candle_key = self._candle_key(df)
+                    if candle_key == self.last_candle_key:
                         time.sleep(15)
                         continue
-                    last_candle_time = candle_time
+                    self.last_candle_key = candle_key
+                    if candle_key.startswith("noclock:"):
+                        log.warning("Coluna de tempo ausente nos candles — avaliando sem dedup por candle.")
 
                     df_h1 = None
                     if cfg.STRATEGY == "rsi_mtf_pullback":
@@ -251,12 +284,22 @@ class Bot:
                             continue
 
                     signal = get_signal(cfg.STRATEGY, df, cfg, df_h1)
+                    self.last_signal = signal
+                    close_px = float(df["close"].iloc[-1])
                     if cfg.STRATEGY == "donchian_fade":
                         info: object = f"DC{cfg.DONCHIAN_N}"
+                        n = cfg.DONCHIAN_N
+                        hi = float(df["high"].iloc[-n - 1:-1].max())
+                        lo = float(df["low"].iloc[-n - 1:-1].min())
+                        detail = f"close={close_px:.2f} hi20={hi:.2f} lo20={lo:.2f}"
                     else:
                         info = round(float(rsi_series(df["close"], cfg.RSI_PERIOD).iloc[-1]), 1)
+                        detail = f"close={close_px:.2f} RSI={info}"
+                    self.last_payout = payout
+                    self.last_check = f"{detail} signal={signal} payout={payout:.2f}"
+                    log.info(f"[CHECK] {candle_key} {detail} -> {signal} (payout {payout:.2f})")
+                    self._write_status()
                     if not signal:
-                        self._write_status()
                         time.sleep(15)
                         continue
 
