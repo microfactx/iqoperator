@@ -3,6 +3,7 @@ providers = ["python", "node"]
 [variables]
   NIXPACKS_NODE_VERSION = "20"
   NIXPACKS_PYTHON_VERSION = "3.11"
+  NODE_OPTIONS = "--max-old-space-size=1024"
 
 [phases.install]
   cmds = ["python -m venv --copies /opt/venv && . /opt/venv/bin/activate && pip install -r requirements.txt", "npm --prefix cockpit-next install", "mkdir -p data"]
