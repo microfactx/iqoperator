@@ -15,7 +15,6 @@
     "next-auth": "5.0.0-beta.20",
     "zod": "3.23.8",
     "recharts": "2.12.7",
-    "huggingface_hub": "0.0.0",
     "pg": "8.11.5"
   },
   "devDependencies": {
