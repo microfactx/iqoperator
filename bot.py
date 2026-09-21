@@ -1,10 +1,11 @@
 """Robô IQOption DEMO - Binárias BTCUSD | MTF pullback (H1 + RSI M15) + Kelly 2%."""
 import csv
+import json
 import logging
 import os
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
 
@@ -138,6 +139,47 @@ class Bot:
         self._trade_log([datetime.now().isoformat(timespec="seconds"), signal,
                          info, round(payout, 4), round(p, 4),
                          kfull, stake, round(profit, 2), balance])
+        self._write_status()
+
+    def _write_status(self):
+        try:
+            os.makedirs(os.path.dirname(cfg.BOT_STATUS) or ".", exist_ok=True)
+            import json
+            with open(cfg.BOT_STATUS, "w", encoding="utf-8") as f:
+                json.dump({
+                    "last_tick": datetime.now(timezone.utc).isoformat(),
+                    "asset": self.asset,
+                    "balance": self.api.get_balance() if hasattr(self, 'api') else None,
+                    "balance_type": cfg.BALANCE_TYPE,
+                    "strategy": cfg.STRATEGY,
+                    "profit_session": round(self.profit, 2),
+                    "trades": len(self.history),
+                    "winrate": round(empirical_winrate(list(self.history), cfg.KELLY_PRIOR, prior_weight=cfg.KELLY_PRIOR_WEIGHT), 4),
+                }, f)
+        except Exception:
+            pass
+
+    def _check_manual(self) -> str | None:
+        try:
+            if not os.path.exists(cfg.MANUAL_SIGNAL):
+                return None
+            import json
+            with open(cfg.MANUAL_SIGNAL, encoding="utf-8") as f:
+                data = json.load(f)
+            ts = data.get("ts", 0)
+            if time.time() - ts > 60:
+                os.remove(cfg.MANUAL_SIGNAL)
+                return None
+            sig = data.get("signal")
+            if sig not in ("call", "put"):
+                os.remove(cfg.MANUAL_SIGNAL)
+                return None
+            os.remove(cfg.MANUAL_SIGNAL)
+            log.info(f"MANUAL {sig.upper()} solicitado via cockpit")
+            return sig
+        except Exception as e:
+            log.warning(f"manual check falhou: {e}")
+            return None
 
     def stop(self) -> bool:
         if self.profit >= cfg.STOP_WIN:
@@ -172,10 +214,23 @@ class Bot:
                     if not self.ensure_connected():
                         time.sleep(60)
                         continue
+                    self._write_status()
                     payout = self.get_payout()
                     if payout < cfg.PAYOUT_MIN:
                         log.info(f"Payout {payout:.2f} < mínimo, aguardando.")
                         time.sleep(60)
+                        continue
+
+                    # sinal manual tem prioridade (botao cockpit)
+                    manual = self._check_manual()
+                    if manual:
+                        stake, p, kfull = self.calc_stake(payout)
+                        profit = self.trade(manual, stake)
+                        if profit is None:
+                            time.sleep(5)
+                            continue
+                        self.update_result(manual, "MANUAL", payout, p, kfull, stake, profit)
+                        time.sleep(5)
                         continue
 
                     df = self.candles_df(cfg.TIMEFRAME, cfg.CANDLE_COUNT)
@@ -201,6 +256,7 @@ class Bot:
                     else:
                         info = round(float(rsi_series(df["close"], cfg.RSI_PERIOD).iloc[-1]), 1)
                     if not signal:
+                        self._write_status()
                         time.sleep(15)
                         continue
 

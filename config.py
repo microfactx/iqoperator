@@ -54,6 +54,8 @@ HTF_EMA = _get_int("HTF_EMA", 50)
 RSI_REQUIRE_EXIT = os.getenv("RSI_REQUIRE_EXIT", "0") == "1"
 LOG_FILE = os.getenv("LOG_FILE", "data/bot.log")
 TRADE_LOG = os.getenv("TRADE_LOG", "data/trades_live.csv")
+MANUAL_SIGNAL = os.getenv("MANUAL_SIGNAL", "data/manual_signal.json")
+BOT_STATUS = os.getenv("BOT_STATUS", "data/bot_status.json")
 EMA_FAST = _get_int("EMA_FAST", 9)
 EMA_SLOW = _get_int("EMA_SLOW", 21)
 RSI_PERIOD = _get_int("RSI_PERIOD", 14)
