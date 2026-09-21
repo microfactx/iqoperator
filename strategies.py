@@ -138,8 +138,12 @@ def donchian_fade_signal(df: pd.DataFrame, n: int = 20) -> str | None:
     Regra idêntica à validada (IS+OOS+ano fresco). df.iloc[-1] = candle fechado."""
     if len(df) < n + 2:
         return None
-    hi = float(df["high"].iloc[-n - 1:-1].max())
-    lo = float(df["low"].iloc[-n - 1:-1].min())
+    high = df.get("high", df.get("max"))
+    low = df.get("low", df.get("min"))
+    if high is None or low is None:
+        return None
+    hi = float(high.iloc[-n - 1:-1].max())
+    lo = float(low.iloc[-n - 1:-1].min())
     close = float(df["close"].iloc[-1])
     if close > hi:
         return "put"

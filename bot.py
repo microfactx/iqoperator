@@ -76,7 +76,15 @@ class Bot:
             return None
         if not candles:
             return None
-        return pd.DataFrame(candles)
+        df = pd.DataFrame(candles)
+        # IQOption usa max/min; normaliza para high/low/close/open/from
+        rename = {"max": "high", "min": "low"}
+        df = df.rename(columns=rename)
+        # garante colunas essenciais
+        for c in ("high", "low", "close", "open"):
+            if c not in df.columns:
+                df[c] = df.get("close", 0)
+        return df
 
     def get_payout(self) -> float:
         try:
