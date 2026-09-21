@@ -11,6 +11,7 @@ from iqoptionapi.stable_api import IQ_Option
 import config as cfg
 from strategies import get_signal, rsi_series
 from kelly import kelly_fraction_stake, empirical_winrate
+from hf_sync import sync_file
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,6 +42,8 @@ class Bot:
     def _trade_log(self, row: list):
         with open(cfg.TRADE_LOG, "a", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow(row)
+        # sem disco no Railway: espelha no dataset HF (se HF_TOKEN + HF_DATASET_REPO setados)
+        sync_file(cfg.TRADE_LOG)
 
     def connect(self) -> bool:
         for attempt in range(1, 6):

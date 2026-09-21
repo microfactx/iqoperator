@@ -3,3 +3,4 @@ iqoptionapi==6.8.9.1
 python-dotenv
 pandas
 numpy
+huggingface_hub
