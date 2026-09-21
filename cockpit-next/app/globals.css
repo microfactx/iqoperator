@@ -7,5 +7,45 @@
   --primary: 219 100% 50%;
   --card: 220 18% 11%;
 }
+html { color-scheme: dark; }
 body { background: #0B0E14; color: #E6E6E6; }
-.mono { font-family: ui-monospace, monospace; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+::selection { background: rgba(61, 214, 140, 0.28); color: #fff; }
+
+/* scrollbar institucional */
+* { scrollbar-width: thin; scrollbar-color: #232A36 transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: #232A36; border-radius: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* Magic UI animated-gradient-text (MIT) — wordmark IQOperator */
+.text-gradient-animated {
+  background: linear-gradient(to right, #3DD68C, #00C2FF, #0066FF, #3DD68C);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-pan 6s linear infinite;
+}
+@keyframes gradient-pan {
+  to { background-position: 200% center; }
+}
+
+/* Magic UI marquee (MIT) — ticker tape */
+.animate-marquee { animation: marquee 40s linear infinite; }
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* Aceternity spotlight (MIT) — reveal do fundo */
+.animate-spotlight { animation: spotlight 2s ease 0.75s 1 forwards; }
+@keyframes spotlight {
+  0% { opacity: 0; transform: translate(-72%, -62%) scale(0.5); }
+  100% { opacity: 1; transform: translate(-50%, -40%) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee, .animate-spotlight, .text-gradient-animated { animation: none; }
+}

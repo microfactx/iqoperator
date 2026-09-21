@@ -21,6 +21,10 @@ import { GoalRing } from "@/components/goal-ring";
 import { AlertsBanner } from "@/components/alerts-banner";
 import { SessionReport } from "@/components/session-report";
 import { PayoutScatter } from "@/components/payout-scatter";
+import { Brand } from "@/components/brand/logo";
+import { StatusPill } from "@/components/brand/status-pill";
+import { SessionClock } from "@/components/brand/session-clock";
+import { TickerTape } from "@/components/brand/ticker-tape";
 import { useEffect, useState } from "react";
 
 type S = {
@@ -70,6 +74,21 @@ export default function Dashboard() {
   }, []);
 
   const alive = b && Date.now() - new Date(b.last_tick).getTime() < 45000;
+  const pillStatus = !b ? "offline" : alive ? "online" : "degraded";
+  const pillLabel = !b ? "aguardando bot" : alive ? "bot vivo" : "sem heartbeat";
+
+  const tapeItems = [
+    { symbol: b?.asset || "BTCUSD", price: `saldo ${b?.balance ?? s.balance}` },
+    {
+      symbol: "SESSÃO",
+      price: `${s.profit >= 0 ? "+" : ""}${s.profit.toFixed(2)}`,
+      chg: s.trades ? (s.winrate * 100 - 53.48) : 0,
+    },
+    { symbol: "WINRATE", price: `${(s.winrate * 100).toFixed(1)}%`, chg: s.trades ? s.winrate * 100 - 53.48 : 0 },
+    { symbol: "ESTRATÉGIA", price: b?.strategy || "donchian_fade" },
+    { symbol: "PAYOUT MÍN", price: "≥ 0.80" },
+    { symbol: "TRADES", price: String(s.trades) },
+  ];
 
   // Prepare chart data from last trades equity
   const chartData = s.last.map((t: any) => ({
@@ -79,18 +98,28 @@ export default function Dashboard() {
   }));
 
   return (
-    <main className="max-w-7xl mx-auto p-6">
-      <div>
-        <h1 className="text-2xl font-semibold">IQOperator — microfactx</h1>
-        <p className="text-muted text-sm">
-          PRACTICE · donchian_fade · payout ≥0.80{" "}
-          {b ? `· ${b.asset} · saldo ${b.balance} · ${b.balance_type}` : ""}
-        </p>
-        <p className={`text-xs mt-1 ${alive ? "text-success" : "text-destructive"}`}>
-          {alive
-            ? `● bot vivo — último tick ${new Date(b!.last_tick).toLocaleTimeString()}`
-            : "○ bot sem heartbeat (aguarde 5s)"}
-        </p>
+    <main className="relative z-10 max-w-7xl mx-auto p-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <Brand />
+          <p className="text-muted text-sm mt-2">
+            PRACTICE · donchian_fade · payout ≥0.80{" "}
+            {b ? `· ${b.asset} · saldo ${b.balance} · ${b.balance_type}` : ""}
+          </p>
+          {alive && b && (
+            <p className="text-xs mt-1 text-muted">
+              último tick {new Date(b.last_tick).toLocaleTimeString("pt-BR")}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-4">
+          <SessionClock />
+          <StatusPill status={pillStatus} label={pillLabel} />
+        </div>
+      </div>
+
+      <div className="mt-4 -mx-6">
+        <TickerTape items={tapeItems} />
       </div>
 
       {/* Alerts */}
