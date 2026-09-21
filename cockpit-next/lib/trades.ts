@@ -1,9 +1,17 @@
 import fs from "fs";
-import { parse } from "csv-parse/sync";
 export type Trade = { time:string; signal:string; info:string; payout:string; winrate:string; kelly:string; stake:string; profit:string; balance:string };
 export function readTrades(): Trade[]{
   const p = process.env.TRADE_LOG || "data/trades_live.csv";
-  try{ const raw=fs.readFileSync(p,"utf-8"); return parse(raw,{columns:true, skip_empty_lines:true}); }catch{ return []; }
+  try{
+    const raw=fs.readFileSync(p,"utf-8").trim();
+    if(!raw) return [];
+    const lines=raw.split("\n"); const headers=lines[0].split(",");
+    return lines.slice(1).filter(Boolean).map(l=>{
+      const v=l.split(","); const o:Record<string,string>={};
+      headers.forEach((h,i)=>o[h.trim()]=v[i]?.trim()||"");
+      return o as Trade;
+    });
+  }catch{ return []; }
 }
 export function stats(){
   const rows=readTrades();
