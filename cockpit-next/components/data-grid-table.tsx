@@ -140,5 +140,10 @@ function renderValue(value: any, key: string): React.ReactNode {
       </span>
     )
   }
+  if (key === "payout") {
+    const n = parseFloat(v)
+    if (isNaN(n)) return v
+    return <span className="text-accent">{(n * 100).toFixed(0)}%</span>
+  }
   return v
 }

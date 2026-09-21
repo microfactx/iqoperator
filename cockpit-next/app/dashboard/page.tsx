@@ -2,7 +2,10 @@
 import { DataGridTable } from "@/components/data-grid-table";
 import { StatisticsCard7 } from "@/components/statistics-card-7";
 import { EquityCurveChart } from "@/components/line-charts-9";
-import { cn } from "@/lib/utils";
+import { PerformanceGauge } from "@/components/performance-gauge";
+import { SessionSummary } from "@/components/session-summary";
+import { RiskPanel } from "@/components/risk-panel";
+import { TradesFeed } from "@/components/trades-feed";
 import { useEffect, useState } from "react";
 
 type S = {
@@ -34,7 +37,7 @@ export default function Dashboard() {
   });
 
   const [b, setB] = useState<B>(null);
-
+  const [uptime, setUptime] = useState(0);
   const [msg, setMsg] = useState("");
 
   async function tick() {
@@ -42,6 +45,8 @@ export default function Dashboard() {
     if (r) setS(r);
     const hb = await fetch("/api/manual").then((x) => x.json()).catch(() => null);
     if (hb && !hb.error) setB(hb);
+    const h = await fetch("/api/health").then((x) => x.json()).catch(() => null);
+    if (h && typeof h.uptime === "number") setUptime(h.uptime);
   }
 
   useEffect(() => {
@@ -61,8 +66,7 @@ export default function Dashboard() {
     setTimeout(() => setMsg(""), 4000);
   }
 
-  const alive =
-    b && Date.now() - new Date(b.last_tick).getTime() < 45000;
+  const alive = b && Date.now() - new Date(b.last_tick).getTime() < 45000;
 
   // Prepare chart data from last trades equity
   const chartData = s.last.map((t: any) => ({
@@ -73,7 +77,7 @@ export default function Dashboard() {
 
   return (
     <main className="max-w-7xl mx-auto p-6">
-      <div className="flex justify-between items-start">
+      <div className="flex justify-between items-start flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-semibold">
             IQOperator — microfactx
@@ -112,34 +116,27 @@ export default function Dashboard() {
 
       {/* Statistics Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-        <StatisticsCard7
-          title="Total Trades"
-          value={s.trades}
-          subtitle="Sinais gerados"
-        />
-        <StatisticsCard7
-          title="Winrate"
-          value={s.winrate}
-          subtitle="Percentual de acertos"
-          metric="winrate"
-        />
-        <StatisticsCard7
-          title="Lucro Sessão"
-          value={s.profit}
-          subtitle="Em R$"
-          metric="profit"
-        />
-        <StatisticsCard7
-          title="Saldo Atual"
-          value={s.balance}
-          subtitle="Conta IQ Option"
-          metric="balance"
-        />
+        <StatisticsCard7 title="Total Trades" value={s.trades} subtitle="Sinais gerados" />
+        <StatisticsCard7 title="Winrate" value={s.winrate} subtitle="Percentual de acertos" metric="winrate" />
+        <StatisticsCard7 title="Lucro Sessão" value={s.profit} subtitle="Em R$" metric="profit" />
+        <StatisticsCard7 title="Saldo Atual" value={s.balance} subtitle="Conta IQ Option" metric="balance" />
       </div>
 
       {/* Equity Curve Chart */}
       <div className="mt-6">
         <EquityCurveChart data={chartData} />
+      </div>
+
+      {/* Performance + Session */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
+        <PerformanceGauge wins={s.wins} trades={s.trades} />
+        <SessionSummary bot={b} uptime={uptime} />
+      </div>
+
+      {/* Atividade + Risco */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
+        <TradesFeed trades={s.last.slice(0, 8)} />
+        <RiskPanel last={s.last} balance={s.balance} />
       </div>
 
       {/* Trade History Table */}
@@ -149,11 +146,12 @@ export default function Dashboard() {
           columns={[
             { accessorKey: "time", header: "Hora" },
             { accessorKey: "signal", header: "Sinal" },
+            { accessorKey: "stake", header: "Stake" },
+            { accessorKey: "payout", header: "Payout" },
             { accessorKey: "profit", header: "Lucro" },
             { accessorKey: "balance", header: "Saldo" },
           ]}
           data={s.last}
-          width="full"
         />
       </div>
     </main>
