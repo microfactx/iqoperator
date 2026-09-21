@@ -15,7 +15,13 @@
     "next-auth": "5.0.0-beta.20",
     "zod": "3.23.8",
     "recharts": "2.12.7",
-    "pg": "8.11.5"
+    "pg": "8.11.5",
+    "lucide-react": "0.454.0",
+    "framer-motion": "11.11.9",
+    "cmdk": "1.0.0",
+    "@radix-ui/react-dialog": "1.1.2",
+    "@radix-ui/react-slot": "1.1.0",
+    "class-variance-authority": "0.7.0"
   },
   "devDependencies": {
     "typescript": "5.5.4",

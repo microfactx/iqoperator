@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Check, Copy, Download, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export interface SessionReportProps {
@@ -119,7 +120,7 @@ export function SessionReport({
 
   return (
     <div className={cn("bg-surface border border-border rounded-lg p-4 flex flex-col gap-3", className)}>
-      <h2 className="text-sm font-medium">Resumo da Sessão</h2>
+      <div className="flex items-center gap-2"><FileText size={14} className="text-muted" /><h2 className="text-sm font-medium">Resumo da Sessão</h2></div>
 
       <pre className="mono text-xs whitespace-pre-wrap bg-background/60 rounded p-3">{summary}</pre>
 
@@ -127,16 +128,16 @@ export function SessionReport({
         <button
           type="button"
           onClick={handleCopy}
-          className="text-xs px-3 py-1.5 rounded border border-border hover:opacity-80 transition-opacity"
+          className="text-xs px-3 py-1.5 rounded border border-border hover:opacity-80 transition-opacity inline-flex items-center gap-1.5"
         >
-          {copied ? <span className="text-success">Copiado ✓</span> : "Copiar resumo"}
+          {copied ? <span className="text-success inline-flex items-center gap-1.5"><Check size={13} />Copiado</span> : <span className="inline-flex items-center gap-1.5"><Copy size={13} />Copiar resumo</span>}
         </button>
         <button
           type="button"
           onClick={handleDownload}
-          className="text-xs px-3 py-1.5 rounded border border-border text-muted hover:opacity-80 transition-opacity"
+          className="text-xs px-3 py-1.5 rounded border border-border text-muted hover:opacity-80 transition-opacity inline-flex items-center gap-1.5"
         >
-          Baixar .txt
+          <Download size={13} />Baixar .txt
         </button>
       </div>
     </div>

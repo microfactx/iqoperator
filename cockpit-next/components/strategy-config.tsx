@@ -1,5 +1,6 @@
 "use client";
 
+import { Workflow } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type StrategyConfigProps = {
@@ -35,7 +36,7 @@ export function StrategyConfig({ bot }: StrategyConfigProps) {
 
   return (
     <div className="bg-surface border border-border rounded-lg p-4">
-      <h3 className="text-sm font-medium">Configuração da Estratégia</h3>
+      <div className="flex items-center gap-2"><Workflow size={14} className="text-muted" /><h3 className="text-sm font-medium">Configuração da Estratégia</h3></div>
       <dl className={cn("mt-2 divide-y divide-border")}>
         {rows.map((row) => (
           <Row key={row.label} label={row.label} value={row.value} />

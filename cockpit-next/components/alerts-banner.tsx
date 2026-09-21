@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { BellRing } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export interface AlertTrade {
@@ -101,7 +102,7 @@ export function AlertsBanner({ trades, winrate, alive, className }: AlertsBanner
 
   return (
     <div className={cn("bg-surface border border-border rounded-lg p-4", className)}>
-      <h2 className="text-sm font-medium mb-3">Alertas</h2>
+      <div className="flex items-center gap-2 mb-3"><BellRing size={14} className="text-muted" /><h2 className="text-sm font-medium">Alertas</h2></div>
       <div className="flex flex-col gap-2">
         {alerts.map((alert) => (
           <div key={alert.key} className="flex items-center gap-2 text-xs">

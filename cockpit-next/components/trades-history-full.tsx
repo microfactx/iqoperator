@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Download, History, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   Table,
@@ -119,24 +120,27 @@ export function TradesHistoryFull({ trades }: { trades: any[] }) {
   return (
     <div className="bg-surface border border-border rounded-lg p-4">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <h2 className="text-sm font-medium">Histórico de Trades</h2>
+        <div className="flex items-center gap-2"><History size={14} className="text-muted" /><h2 className="text-sm font-medium">Histórico de Trades</h2></div>
         <button
           type="button"
           onClick={handleExportCSV}
-          className="px-3 py-1.5 rounded text-xs font-medium border border-border bg-background/60 text-foreground hover:bg-muted/20 transition-colors"
+          className="px-3 py-1.5 rounded text-xs font-medium border border-border bg-background/60 text-foreground hover:bg-muted/20 transition-colors inline-flex items-center gap-1.5"
         >
-          Exportar CSV
+          <Download size={13} />Exportar CSV
         </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        <input
+        <div className="relative flex-1 min-w-[180px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+          <input
           type="text"
           value={search}
           onChange={handleSearchChange}
           placeholder="Buscar por sinal, info ou hora..."
-          className="flex-1 min-w-[180px] px-3 py-1.5 rounded text-xs bg-background/60 border border-border text-foreground placeholder:text-muted focus:outline-none focus:border-accent/50"
+          className="w-full pl-9 pr-3 py-1.5 rounded text-xs bg-background/60 border border-border text-foreground placeholder:text-muted focus:outline-none focus:border-accent/50"
         />
+        </div>
         <div className="flex items-center gap-2">
           {filterBtn("all", "Todas")}
           {filterBtn("win", "Wins")}

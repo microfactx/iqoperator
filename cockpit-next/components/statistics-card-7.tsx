@@ -1,4 +1,5 @@
 import * as React from "react"
+import { ArrowLeftRight, TrendingUp, Trophy, Wallet } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export interface StatisticsCard7Props {
@@ -15,6 +16,14 @@ const METRIC_COLORS: Record<string, string> = {
   trades: "#818CF8",
   balance: "#F97316",
   payout: "#F472B6",
+}
+
+const METRIC_ICONS: Record<string, typeof Trophy> = {
+  winrate: Trophy,
+  profit: TrendingUp,
+  trades: ArrowLeftRight,
+  balance: Wallet,
+  payout: Wallet,
 }
 
 export function StatisticsCard7({
@@ -38,6 +47,7 @@ export function StatisticsCard7({
 
   const isGood = metric === "winrate" ? valueNum >= 0.5348 : metric === "profit" ? valueNum >= 0 : true
   const dotColor = isGood ? "#3DD68C" : "#FF5470"
+  const Icon = METRIC_ICONS[metric] || METRIC_ICONS.trades
 
   return (
     <div
@@ -47,7 +57,7 @@ export function StatisticsCard7({
       )}
     >
       <div className="w-full flex items-center justify-between px-4 pb-2">
-        <span className="text-xs font-medium text-muted">{title}</span>
+        <span className="flex items-center gap-2 text-xs font-medium text-muted"><Icon size={14} className="text-muted" />{title}</span>
         <span
           className="h-2 w-2 rounded-full"
           style={{ backgroundColor: dotColor, boxShadow: `0 0 8px ${dotColor}` }}

@@ -1,4 +1,5 @@
 import * as React from "react"
+import { Gauge } from "lucide-react"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 import { cn } from "@/lib/utils"
 
@@ -21,7 +22,7 @@ export function PerformanceGauge({
 
   return (
     <div className={cn("bg-surface border border-border rounded-lg p-4 flex flex-col", className)}>
-      <h2 className="text-sm font-medium mb-2">Performance</h2>
+      <div className="flex items-center gap-2 mb-2"><Gauge size={14} className="text-muted" /><h2 className="text-sm font-medium">Performance</h2></div>
       <div className="relative flex-1 min-h-[180px]">
         {trades === 0 ? (
           <div className="h-[180px] flex items-center justify-center text-muted text-sm">

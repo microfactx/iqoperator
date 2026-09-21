@@ -1,3 +1,4 @@
+import { Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type StreakTrackerProps = {
@@ -12,7 +13,7 @@ export function StreakTracker({ trades }: StreakTrackerProps) {
   if (!trades || trades.length === 0) {
     return (
       <div className="bg-surface border border-border rounded-lg p-4">
-        <h3 className="text-sm font-medium">Sequências</h3>
+                <div className="flex items-center gap-2"><Flame size={14} className="text-muted" /><h3 className="text-sm font-medium">Sequências</h3></div>
         <p className="text-muted text-sm mt-2">Sem trades ainda</p>
       </div>
     );
@@ -56,7 +57,7 @@ export function StreakTracker({ trades }: StreakTrackerProps) {
 
   return (
     <div className="bg-surface border border-border rounded-lg p-4">
-      <h3 className="text-sm font-medium">Sequências</h3>
+              <div className="flex items-center gap-2"><Flame size={14} className="text-muted" /><h3 className="text-sm font-medium">Sequências</h3></div>
 
       <div className="grid grid-cols-3 gap-2 mt-3">
         <div>

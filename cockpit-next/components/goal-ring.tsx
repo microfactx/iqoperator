@@ -1,5 +1,6 @@
 "use client";
 
+import { Target } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { cn } from "@/lib/utils";
 
@@ -44,7 +45,7 @@ export function GoalRing({ session, stopWin = 50, stopLoss = 30 }: GoalRingProps
 
   return (
     <div className="bg-surface border border-border rounded-lg p-4">
-      <h3 className="text-sm font-medium">Meta da sessão</h3>
+      <div className="flex items-center gap-2"><Target size={14} className="text-muted" /><h3 className="text-sm font-medium">Meta da sessão</h3></div>
 
       <div className="relative h-[180px] w-full">
         <ResponsiveContainer width="100%" height="100%">

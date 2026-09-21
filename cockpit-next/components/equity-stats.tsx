@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { BarChart3 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 function toNum(v: unknown): number {
@@ -37,7 +38,7 @@ export function EquityStats({ trades }: { trades: any[] }) {
 
   return (
     <div className="bg-surface border border-border rounded-lg p-4">
-      <h2 className="text-sm font-medium mb-3">Estatísticas da Curva de Capital</h2>
+      <div className="flex items-center gap-2 mb-3"><BarChart3 size={14} className="text-muted" /><h2 className="text-sm font-medium">Estatísticas da Curva de Capital</h2></div>
 
       {stats === null ? (
         <div className="flex items-center justify-center py-8 text-sm text-muted">

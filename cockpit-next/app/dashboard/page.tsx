@@ -25,6 +25,8 @@ import { Brand } from "@/components/brand/logo";
 import { StatusPill } from "@/components/brand/status-pill";
 import { SessionClock } from "@/components/brand/session-clock";
 import { TickerTape } from "@/components/brand/ticker-tape";
+import { AppSidebar } from "@/components/shell/app-sidebar";
+import { CommandMenu, CommandMenuHint } from "@/components/shell/command-menu";
 import { useEffect, useState } from "react";
 
 type S = {
@@ -57,6 +59,25 @@ export default function Dashboard() {
 
   const [b, setB] = useState<B>(null);
   const [uptime, setUptime] = useState(0);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function manual(sig: string) {
+    if (!confirm(`Enviar sinal manual ${sig}?`)) return;
+    setMsg("enviando...");
+    try {
+      const r = await fetch("/api/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signal: sig }),
+      })
+        .then((x) => x.json())
+        .catch(() => null);
+      setMsg(r?.error ? String(r.error) : `sinal ${sig} enviado`);
+      tick();
+    } catch {
+      setMsg("falha ao enviar sinal");
+    }
+  }
 
   async function tick() {
     const r = await fetch("/api/status").then((x) => x.json()).catch(() => null);
@@ -98,7 +119,10 @@ export default function Dashboard() {
   }));
 
   return (
-    <main className="relative z-10 max-w-7xl mx-auto p-6">
+    <div className="relative z-10 flex">
+      <AppSidebar alive={!!alive} />
+      <div className="flex-1 min-w-0">
+        <main className="max-w-7xl mx-auto p-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <Brand />
@@ -115,8 +139,10 @@ export default function Dashboard() {
         <div className="flex items-center gap-4">
           <SessionClock />
           <StatusPill status={pillStatus} label={pillLabel} />
+          <CommandMenuHint />
         </div>
       </div>
+      {msg && <p className="text-xs mt-2 text-muted">{msg}</p>}
 
       <div className="mt-4 -mx-6">
         <TickerTape items={tapeItems} />
@@ -128,7 +154,7 @@ export default function Dashboard() {
       </div>
 
       {/* Statistics Cards Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+      <div id="visao-geral" className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 scroll-mt-6">
         <StatisticsCard7 title="Total Trades" value={s.trades} subtitle="Sinais gerados" />
         <StatisticsCard7 title="Winrate" value={s.winrate} subtitle="Percentual de acertos" metric="winrate" />
         <StatisticsCard7 title="Lucro Sessão" value={s.profit} subtitle="Em R$" metric="profit" />
@@ -136,7 +162,7 @@ export default function Dashboard() {
       </div>
 
       {/* Equity Curve Chart */}
-      <div className="mt-6">
+      <div id="equity" className="mt-6 scroll-mt-6">
         <EquityCurveChart data={chartData} />
       </div>
 
@@ -153,7 +179,7 @@ export default function Dashboard() {
       </div>
 
       {/* Performance + Session */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
+      <div id="desempenho" className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6 scroll-mt-6">
         <PerformanceGauge wins={s.wins} trades={s.trades} />
         <SessionSummary bot={b} uptime={uptime} />
       </div>
@@ -172,7 +198,7 @@ export default function Dashboard() {
       </div>
 
       {/* Trade ticket + Strategy + Bot health */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6">
+      <div id="operacao" className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6 scroll-mt-6">
         <TradeTicket />
         <StrategyConfig bot={b} />
         <BotHealthCard bot={b} uptime={uptime} />
@@ -194,15 +220,18 @@ export default function Dashboard() {
       </div>
 
       {/* Atividade + Risco */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
+      <div id="risco" className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6 scroll-mt-6">
         <TradesFeed trades={s.last.slice(0, 8)} />
         <RiskPanel last={s.last} balance={s.balance} />
       </div>
 
       {/* Full trade history with search/filter/export */}
-      <div className="mt-6">
+      <div id="historico" className="mt-6 scroll-mt-6">
         <TradesHistoryFull trades={s.last} />
       </div>
-    </main>
+        </main>
+      </div>
+      <CommandMenu onManual={manual} />
+    </div>
   );
 }

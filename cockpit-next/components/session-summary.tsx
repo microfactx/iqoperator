@@ -1,4 +1,5 @@
 import * as React from "react"
+import { Clock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export interface SessionInfo {
@@ -37,7 +38,7 @@ export function SessionSummary({
   return (
     <div className={cn("bg-surface border border-border rounded-lg p-4 flex flex-col gap-3", className)}>
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">Sessão</h2>
+        <div className="flex items-center gap-2"><Clock size={14} className="text-muted" /><h2 className="text-sm font-medium">Sessão</h2></div>
         <span className="text-[11px] px-2 py-0.5 rounded-full border border-border text-muted mono">
           up {uptimeStr}
         </span>

@@ -1,4 +1,5 @@
 import * as React from "react"
+import { Activity } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function TradesFeed({
@@ -11,7 +12,7 @@ export function TradesFeed({
   return (
     <div className={cn("bg-surface border border-border rounded-lg p-4 flex flex-col", className)}>
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-medium">Atividade Recente</h2>
+        <div className="flex items-center gap-2"><Activity size={14} className="text-muted" /><h2 className="text-sm font-medium">Atividade Recente</h2></div>
         <span className="text-[11px] text-muted">últimas {trades.length}</span>
       </div>
 

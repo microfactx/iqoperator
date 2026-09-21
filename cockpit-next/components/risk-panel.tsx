@@ -1,4 +1,5 @@
 import * as React from "react"
+import { ShieldAlert } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function RiskPanel({
@@ -25,7 +26,7 @@ export function RiskPanel({
 
   return (
     <div className={cn("bg-surface border border-border rounded-lg p-4", className)}>
-      <h2 className="text-sm font-medium mb-3">Gerenciamento de Risco</h2>
+      <div className="flex items-center gap-2 mb-3"><ShieldAlert size={14} className="text-muted" /><h2 className="text-sm font-medium">Gerenciamento de Risco</h2></div>
 
       {!t ? (
         <div className="text-sm text-muted">Sem dados de stake ainda — aguardando a primeira trade.</div>
