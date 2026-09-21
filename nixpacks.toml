@@ -3,3 +3,9 @@ providers = ["python", "node"]
 [variables]
   NIXPACKS_NODE_VERSION = "20"
   NIXPACKS_PYTHON_VERSION = "3.11"
+
+[phases.install]
+  cmds = ["python -m venv --copies /opt/venv && . /opt/venv/bin/activate && pip install -r requirements.txt", "npm --prefix cockpit-next install"]
+
+[phases.build]
+  cmds = ["npm --prefix cockpit-next run build"]

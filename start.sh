@@ -1,8 +1,5 @@
 #!/bin/bash
 set -e
-echo "=== Build cockpit-next ==="
-npm --prefix cockpit-next install
-npm --prefix cockpit-next run build
 echo "=== Start bot + cockpit ==="
 python main.py &
 NEXT_PID=$!
