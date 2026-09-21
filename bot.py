@@ -25,6 +25,7 @@ log = logging.getLogger("iqrobot")
 class Bot:
     def __init__(self):
         self.api = IQ_Option(cfg.EMAIL, cfg.PASSWORD)
+        self.asset = cfg.ASSET
         self.profit = 0.0
         self.history: deque[bool] = deque(maxlen=cfg.KELLY_LOOKBACK)
         self.martingale_step = 0
@@ -69,27 +70,29 @@ class Bot:
         return self.connect()
 
     def candles_df(self, timeframe: int, count: int) -> pd.DataFrame | None:
-        try:
-            candles = self.api.get_candles(cfg.ASSET, timeframe, count, time.time())
-        except Exception as e:
-            log.warning(f"get_candles falhou: {e}")
-            return None
-        if not candles:
-            return None
-        df = pd.DataFrame(candles)
-        # IQOption usa max/min; normaliza para high/low/close/open/from
-        rename = {"max": "high", "min": "low"}
-        df = df.rename(columns=rename)
-        # garante colunas essenciais
-        for c in ("high", "low", "close", "open"):
-            if c not in df.columns:
-                df[c] = df.get("close", 0)
-        return df
+        for asset in (self.asset, f"{self.asset}-OTC" if not self.asset.endswith("-OTC") else self.asset.replace("-OTC", "")):
+            try:
+                candles = self.api.get_candles(asset, timeframe, count, time.time())
+            except Exception as e:
+                log.warning(f"get_candles falhou {asset}: {e}")
+                continue
+            if candles:
+                if asset != self.asset:
+                    log.info(f"Fallback ativo: {self.asset} -> {asset}")
+                    self.asset = asset
+                df = pd.DataFrame(candles)
+                rename = {"max": "high", "min": "low"}
+                df = df.rename(columns=rename)
+                for c in ("high", "low", "close", "open"):
+                    if c not in df.columns:
+                        df[c] = df.get("close", 0)
+                return df
+        return None
 
     def get_payout(self) -> float:
         try:
             detail = self.api.get_binary_option_detail()
-            for key in (cfg.ASSET, f"{cfg.ASSET}-OTC"):
+            for key in (self.asset, f"{self.asset}-OTC" if not self.asset.endswith("-OTC") else self.asset.replace("-OTC", ""), cfg.ASSET, f"{cfg.ASSET}-OTC"):
                 if isinstance(detail, dict) and key in detail:
                     v = detail[key]
                     if isinstance(v, dict):
@@ -117,12 +120,26 @@ class Bot:
             return stake, p, kfull
         return round(self.current_amount, 2), p, 0.0
 
-    def trade(self, action: str, stake: float) -> float:
-        ok, order_id = self.api.buy(stake, cfg.ASSET, action, cfg.EXPIRATION)
+    def trade(self, action: str, stake: float) -> float | None:
+        ok, order_id = self.api.buy(stake, self.asset, action, cfg.EXPIRATION)
         if not ok:
+            msg = str(order_id)
+            if "not available" in msg.lower() and not self.asset.endswith("-OTC"):
+                alt = f"{self.asset}-OTC"
+                log.warning(f"Ativo {self.asset} indisponível, tentando {alt}")
+                ok, order_id = self.api.buy(stake, alt, action, cfg.EXPIRATION)
+                if ok:
+                    log.info(f"Ativo trocado: {self.asset} -> {alt}")
+                    self.asset = alt
+                    log.info(f"TRADE {action.upper()} {self.asset} M{cfg.EXPIRATION} stake={stake} id={order_id}")
+                    try:
+                        return float(self.api.check_win_v2(order_id))
+                    except Exception as e:
+                        log.error(f"check_win falhou id={order_id}: {e}")
+                        return 0.0
             log.error(f"Buy rejeitado: {order_id}")
-            return 0.0
-        log.info(f"TRADE {action.upper()} {cfg.ASSET} M{cfg.EXPIRATION} stake={stake} id={order_id}")
+            return None
+        log.info(f"TRADE {action.upper()} {self.asset} M{cfg.EXPIRATION} stake={stake} id={order_id}")
         try:
             return float(self.api.check_win_v2(order_id))
         except Exception as e:
@@ -162,7 +179,7 @@ class Bot:
         if not self.connect():
             return
 
-        log.info(f"START {cfg.ASSET} | {cfg.STRATEGY} RSI({cfg.RSI_PERIOD}) "
+        log.info(f"START {self.asset} | {cfg.STRATEGY} RSI({cfg.RSI_PERIOD}) "
                  f"{cfg.RSI_OVERSOLD}/{cfg.RSI_OVERBOUGHT} exit={int(cfg.RSI_REQUIRE_EXIT)} "
                  f"H1_EMA={cfg.HTF_EMA} | Kelly {cfg.KELLY_FRACTION}x teto {cfg.KELLY_MAX_RISK*100:.0f}%")
         last_candle_time = 0
@@ -212,6 +229,9 @@ class Bot:
                     log.info(f"SINAL {signal.upper()} {info} payout={payout:.2f} "
                              f"p={p:.2f} kelly={kfull:.3f} stake={stake:.2f}")
                     profit = self.trade(signal, stake)
+                    if profit is None:
+                        time.sleep(30)
+                        continue
                     self.update_result(signal, info, payout, p, kfull, stake, profit)
                     errors = 0
                     time.sleep(5)
