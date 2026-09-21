@@ -13,6 +13,14 @@ import { DrawdownCard } from "@/components/drawdown-card";
 import { BotHealthCard } from "@/components/bot-health-card";
 import { TradesHistoryFull } from "@/components/trades-history-full";
 import { EquityStats } from "@/components/equity-stats";
+import { SignalDistribution } from "@/components/signal-distribution";
+import { ProfitBars } from "@/components/profit-bars";
+import { StreakTracker } from "@/components/streak-tracker";
+import { StakeEvolution } from "@/components/stake-evolution";
+import { GoalRing } from "@/components/goal-ring";
+import { AlertsBanner } from "@/components/alerts-banner";
+import { SessionReport } from "@/components/session-report";
+import { PayoutScatter } from "@/components/payout-scatter";
 import { useEffect, useState } from "react";
 
 type S = {
@@ -85,6 +93,11 @@ export default function Dashboard() {
         </p>
       </div>
 
+      {/* Alerts */}
+      <div className="mt-4">
+        <AlertsBanner trades={s.last} winrate={s.winrate} alive={!!alive} />
+      </div>
+
       {/* Statistics Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
         <StatisticsCard7 title="Total Trades" value={s.trades} subtitle="Sinais gerados" />
@@ -104,6 +117,12 @@ export default function Dashboard() {
         <PayoutStats trades={s.last} />
       </div>
 
+      {/* Profit bars + Payout scatter */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
+        <ProfitBars trades={s.last} />
+        <PayoutScatter trades={s.last} />
+      </div>
+
       {/* Performance + Session */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
         <PerformanceGauge wins={s.wins} trades={s.trades} />
@@ -116,11 +135,33 @@ export default function Dashboard() {
         <EquityStats trades={s.last} />
       </div>
 
+      {/* Streak + Goal + Signal distribution */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6">
+        <StreakTracker trades={s.last} />
+        <GoalRing session={s.profit} />
+        <SignalDistribution trades={s.last} />
+      </div>
+
       {/* Trade ticket + Strategy + Bot health */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6">
         <TradeTicket />
         <StrategyConfig bot={b} />
         <BotHealthCard bot={b} uptime={uptime} />
+      </div>
+
+      {/* Stake evolution + Session report */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
+        <StakeEvolution trades={s.last} />
+        <SessionReport
+          trades={s.trades}
+          wins={s.wins}
+          winrate={s.winrate}
+          profit={s.profit}
+          balance={s.balance}
+          asset={b?.asset}
+          strategy={b?.strategy}
+          uptime={uptime}
+        />
       </div>
 
       {/* Atividade + Risco */}
