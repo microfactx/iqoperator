@@ -1,13 +1,3 @@
----
-title: IQOperator Bot
-emoji: 🤖
-colorFrom: green
-colorTo: blue
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # Robô IQOption — BTCUSD Binárias
 
 Base em Python com `iqoptionapi` (não-oficial, para estudo).
