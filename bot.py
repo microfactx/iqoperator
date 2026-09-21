@@ -70,41 +70,34 @@ class Bot:
         return self.connect()
 
     def candles_df(self, timeframe: int, count: int) -> pd.DataFrame | None:
-        for asset in (self.asset, f"{self.asset}-OTC" if not self.asset.endswith("-OTC") else self.asset.replace("-OTC", "")):
-            try:
-                candles = self.api.get_candles(asset, timeframe, count, time.time())
-            except Exception as e:
-                log.warning(f"get_candles falhou {asset}: {e}")
-                continue
-            if candles:
-                if asset != self.asset:
-                    log.info(f"Fallback ativo: {self.asset} -> {asset}")
-                    self.asset = asset
-                df = pd.DataFrame(candles)
-                rename = {"max": "high", "min": "low"}
-                df = df.rename(columns=rename)
-                for c in ("high", "low", "close", "open"):
-                    if c not in df.columns:
-                        df[c] = df.get("close", 0)
-                return df
-        return None
+        try:
+            candles = self.api.get_candles(self.asset, timeframe, count, time.time())
+        except Exception as e:
+            log.warning(f"get_candles falhou {self.asset}: {e}")
+            return None
+        if not candles:
+            return None
+        df = pd.DataFrame(candles)
+        df = df.rename(columns={"max": "high", "min": "low"})
+        for c in ("high", "low", "close", "open"):
+            if c not in df.columns:
+                df[c] = df.get("close", 0)
+        return df
 
     def get_payout(self) -> float:
         try:
             detail = self.api.get_binary_option_detail()
-            for key in (self.asset, f"{self.asset}-OTC" if not self.asset.endswith("-OTC") else self.asset.replace("-OTC", ""), cfg.ASSET, f"{cfg.ASSET}-OTC"):
-                if isinstance(detail, dict) and key in detail:
-                    v = detail[key]
-                    if isinstance(v, dict):
-                        for k in ("profit", "payout", "turbo", "binary"):
-                            if k in v:
-                                num = v[k]
-                                if isinstance(num, dict):
-                                    num = next(iter(num.values()), None)
-                                if isinstance(num, (int, float)):
-                                    return float(num) / 100 if num > 1 else float(num)
-                    elif isinstance(v, (int, float)):
-                        return float(v) / 100 if v > 1 else float(v)
+            v = detail.get(self.asset) if isinstance(detail, dict) else None
+            if isinstance(v, dict):
+                for k in ("profit", "payout", "turbo", "binary"):
+                    if k in v:
+                        num = v[k]
+                        if isinstance(num, dict):
+                            num = next(iter(num.values()), None)
+                        if isinstance(num, (int, float)):
+                            return float(num) / 100 if num > 1 else float(num)
+            elif isinstance(v, (int, float)):
+                return float(v) / 100 if v > 1 else float(v)
         except Exception as e:
             log.warning(f"payout fallback: {e}")
         return cfg.KELLY_PAYOUT_DEFAULT
@@ -123,21 +116,7 @@ class Bot:
     def trade(self, action: str, stake: float) -> float | None:
         ok, order_id = self.api.buy(stake, self.asset, action, cfg.EXPIRATION)
         if not ok:
-            msg = str(order_id)
-            if "not available" in msg.lower() and not self.asset.endswith("-OTC"):
-                alt = f"{self.asset}-OTC"
-                log.warning(f"Ativo {self.asset} indisponível, tentando {alt}")
-                ok, order_id = self.api.buy(stake, alt, action, cfg.EXPIRATION)
-                if ok:
-                    log.info(f"Ativo trocado: {self.asset} -> {alt}")
-                    self.asset = alt
-                    log.info(f"TRADE {action.upper()} {self.asset} M{cfg.EXPIRATION} stake={stake} id={order_id}")
-                    try:
-                        return float(self.api.check_win_v2(order_id))
-                    except Exception as e:
-                        log.error(f"check_win falhou id={order_id}: {e}")
-                        return 0.0
-            log.error(f"Buy rejeitado: {order_id}")
+            log.error(f"Buy rejeitado: {order_id} (ativo={self.asset})")
             return None
         log.info(f"TRADE {action.upper()} {self.asset} M{cfg.EXPIRATION} stake={stake} id={order_id}")
         try:
