@@ -1,7 +1,15 @@
 import fs from "fs";
+import path from "path";
 export type Trade = { time:string; signal:string; info:string; payout:string; winrate:string; kelly:string; stake:string; profit:string; balance:string };
+function resolve(p:string){
+  if(path.isAbsolute(p)) return p;
+  // Next roda em cockpit-next/, bot em /app/ — tenta ambos
+  const cand = [path.join(process.cwd(), p), path.join(process.cwd(), "..", p), path.join("/app", p)];
+  for(const c of cand) if(fs.existsSync(c)) return c;
+  return cand[1]; // ../data/... é o correto no Railway
+}
 export function readTrades(): Trade[]{
-  const p = process.env.TRADE_LOG || "data/trades_live.csv";
+  const p = resolve(process.env.TRADE_LOG || "data/trades_live.csv");
   try{
     const raw=fs.readFileSync(p,"utf-8").trim();
     if(!raw) return [];
