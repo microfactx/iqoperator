@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+:root {
+  --background: 220 20% 6%;
+  --foreground: 0 0% 90%;
+  --primary: 219 100% 50%;
+  --card: 220 18% 11%;
+}
+body { background: #0B0E14; color: #E6E6E6; }
+.mono { font-family: ui-monospace, monospace; }
