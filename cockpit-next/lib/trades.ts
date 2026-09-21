@@ -3,10 +3,9 @@ import path from "path";
 export type Trade = { time:string; signal:string; info:string; payout:string; winrate:string; kelly:string; stake:string; profit:string; balance:string };
 function resolve(p:string){
   if(path.isAbsolute(p)) return p;
-  // Next roda em cockpit-next/, bot em /app/ — tenta ambos
   const cand = [path.join(process.cwd(), p), path.join(process.cwd(), "..", p), path.join("/app", p)];
   for(const c of cand) if(fs.existsSync(c)) return c;
-  return cand[1]; // ../data/... é o correto no Railway
+  return cand[1];
 }
 export function readTrades(): Trade[]{
   const p = resolve(process.env.TRADE_LOG || "data/trades_live.csv");
