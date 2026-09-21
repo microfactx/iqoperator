@@ -1,5 +1,5 @@
 # IQOption Robot - BTCUSD Binárias
-iqoptionapi==6.8.9.1
+git+https://github.com/Lu-Yi-Hsun/iqoptionapi.git
 python-dotenv
 pandas
 numpy
