@@ -129,7 +129,7 @@ class Bot:
             return None
         log.info(f"TRADE {action.upper()} {self.asset} M{cfg.EXPIRATION} stake={stake} id={order_id}")
         try:
-            return float(self.api.check_win_v2(order_id))
+            return float(self.api.check_win_v2(order_id, 5))
         except Exception as e:
             log.error(f"check_win falhou id={order_id}: {e}")
             return 0.0
