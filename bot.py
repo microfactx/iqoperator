@@ -96,6 +96,15 @@ class Bot:
             detail = self.api.get_binary_option_detail()
             v = detail.get(self.asset) if isinstance(detail, dict) else None
             if isinstance(v, dict):
+                # estrutura real: {"binary": {"option": {"profit": {"commission": X}}}, ...}
+                for k in ("binary", "turbo"):
+                    sub = v.get(k)
+                    if isinstance(sub, dict):
+                        try:
+                            commission = float(sub["option"]["profit"]["commission"])
+                            return round((100.0 - commission) / 100.0, 4)
+                        except (KeyError, TypeError, ValueError):
+                            pass
                 for k in ("profit", "payout", "turbo", "binary"):
                     if k in v:
                         num = v[k]
@@ -120,8 +129,38 @@ class Bot:
             return stake, p, kfull
         return round(self.current_amount, 2), p, 0.0
 
+    def _wait_result(self, order_id, timeout: float) -> float | None:
+        """Aguarda o resultado com deadline; heartbeat segue vivo durante a espera."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                ok, data = self.api.get_betinfo(order_id)
+            except Exception as e:
+                log.warning(f"get_betinfo exceção id={order_id}: {e}")
+                time.sleep(10)
+                continue
+            if ok and data:
+                try:
+                    node = data["result"]["data"][str(order_id)]
+                except KeyError:
+                    time.sleep(5)
+                    continue
+                if node.get("win") not in ("", None):
+                    try:
+                        return float(node["profit"]) - float(node["deposit"])
+                    except (KeyError, TypeError, ValueError):
+                        return None
+            self.last_check = f"aguardando resultado id={order_id}"
+            self._write_status()
+            time.sleep(5)
+        return None
+
     def trade(self, action: str, stake: float) -> float | None:
         self.buys_attempted += 1
+        try:
+            balance_before = float(self.api.get_balance() or 0)
+        except Exception:
+            balance_before = 0.0
         ok, order_id = self.api.buy(stake, self.asset, action, cfg.EXPIRATION)
         if not ok:
             self.buys_rejected += 1
@@ -129,7 +168,17 @@ class Bot:
             return None
         log.info(f"TRADE {action.upper()} {self.asset} M{cfg.EXPIRATION} stake={stake} id={order_id}")
         try:
-            return float(self.api.check_win_v2(order_id, 5))
+            profit = self._wait_result(order_id, cfg.EXPIRATION * 60 + 180)
+            if profit is not None:
+                return profit
+            # deadline sem resposta: estima via delta de saldo (não trava o bot)
+            try:
+                balance_now = float(self.api.get_balance() or 0)
+                est = round(balance_now - balance_before, 2)
+            except Exception:
+                est = 0.0
+            log.warning(f"RESULT_TIMEOUT id={order_id} — sem betinfo; profit estimado via saldo: {est:+.2f}")
+            return est
         except Exception as e:
             log.error(f"check_win falhou id={order_id}: {e}")
             return 0.0
