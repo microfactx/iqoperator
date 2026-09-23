@@ -23,7 +23,7 @@ export function TradeTicket({ defaultStake = "2" }: { defaultStake?: string }) {
       .then((x) => x.json())
       .then((b) => {
         const list = Array.isArray(b?.assets)
-          ? b.assets.map((a: any) => String(a.asset || a)).filter(Boolean)
+          ? b.assets.map((a: any) => String(a.asset || a)).flatMap((s: string) => s.split(",").map((x) => x.trim()).filter(Boolean))
           : null;
         if (list && list.length) {
           setAssets(list);

@@ -28,7 +28,18 @@ def _get_list(key: str, fallback: list) -> list:
         return [a.strip().upper() for a in raw.split(",") if a.strip()]
     return fallback
 
-ASSETS = _get_list("IQ_ASSETS", [ASSET])
+ASSETS = _get_list("IQ_ASSETS", _get_list("IQ_ASSET", ["EURUSD-OTC"]))
+# Sanidade: nomes de ativo válidos (ex.: "EURUSD-OTC"); ignora entradas quebradas
+# (ex. lista colada na variável singular) em vez de travar o loop em reconnect.
+import re as _re
+_ASSET_RE = _re.compile(r"^[A-Z0-9\-]+$")
+_BAD = [a for a in ASSETS if not _ASSET_RE.match(a)]
+if _BAD:
+    import logging as _logging
+    _logging.getLogger("iqrobot").warning(f"Ignorando ativos inválidos: {_BAD}")
+    ASSETS = [a for a in ASSETS if _ASSET_RE.match(a)]
+if not ASSETS:
+    ASSETS = ["EURUSD-OTC"]
 # Trava global de exposição: no máximo N posições pendentes simultâneas
 MAX_CONCURRENT = _get_int("IQ_MAX_CONCURRENT", 3)
 TIMEFRAME = _get_int("IQ_TIMEFRAME", 900)  # segundos: 900 = M15
