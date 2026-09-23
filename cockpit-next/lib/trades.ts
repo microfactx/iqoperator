@@ -1,9 +1,10 @@
 import fs from "fs";
 import path from "path";
-export type Trade = { time:string; signal:string; info:string; payout:string; winrate:string; kelly:string; stake:string; profit:string; balance:string };
+export type Trade = { time:string; asset?:string; signal:string; info:string; payout:string; winrate:string; kelly:string; stake:string; profit:string; balance:string };
+export type AssetStat = { asset:string; trades:number; wins:number; winrate:number; profit:number };
 function resolve(p:string){
   if(path.isAbsolute(p)) return p;
-  const cand = [path.join(process.cwd(), p), path.join(process.cwd(), "..", p), path.join("/app", p)];
+  const cand = [path.join(process.cwd(), p), path.join(process.cwd(),"..",p), path.join("/app", p)];
   for(const c of cand) if(fs.existsSync(c)) return c;
   return cand[1];
 }
@@ -25,5 +26,18 @@ export function stats(){
   const n=rows.length, wins=rows.filter(r=>parseFloat(r.profit||"0")>0).length;
   const wr=n?wins/n:0, profit=rows.reduce((s,r)=>s+parseFloat(r.profit||"0"),0);
   const bal=rows.at(-1)?.balance ?? "n/a";
-  return { trades:n, wins, winrate:wr, profit:Math.round(profit*100)/100, balance:bal, last: rows.slice(-10).reverse() };
+  const byMap = new Map<string, {trades:number; wins:number; profit:number}>();
+  for(const r of rows){
+    const a = r.asset || "—";
+    const e = byMap.get(a) || {trades:0, wins:0, profit:0};
+    const pf = parseFloat(r.profit||"0") || 0;
+    e.trades += 1; if(pf > 0) e.wins += 1; e.profit += pf;
+    byMap.set(a, e);
+  }
+  const byAsset: AssetStat[] = [...byMap.entries()].map(([asset, e])=>({
+    asset, trades: e.trades, wins: e.wins,
+    winrate: e.trades ? e.wins/e.trades : 0,
+    profit: Math.round(e.profit*100)/100,
+  })).sort((x,y)=>y.profit-x.profit);
+  return { trades:n, wins, winrate:wr, profit:Math.round(profit*100)/100, balance:bal, byAsset, last: rows.slice(-10).reverse() };
 }

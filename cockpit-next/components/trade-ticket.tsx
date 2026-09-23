@@ -8,13 +8,29 @@ type Signal = "call" | "put";
 
 type Feedback = { kind: "success" | "error"; text: string } | null;
 
+const FALLBACK_ASSETS = ["EURUSD-OTC", "GBPUSD-OTC", "USDJPY-OTC", "AUDUSD-OTC", "EURGBP-OTC", "USDCAD-OTC"];
+
 export function TradeTicket({ defaultStake = "2" }: { defaultStake?: string }) {
   const [stake, setStake] = useState<string>(defaultStake);
+  const [asset, setAsset] = useState<string>(FALLBACK_ASSETS[0]);
+  const [assets, setAssets] = useState<string[]>(FALLBACK_ASSETS);
   const [loading, setLoading] = useState<Signal | null>(null);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    fetch("/api/manual")
+      .then((x) => x.json())
+      .then((b) => {
+        const list = Array.isArray(b?.assets)
+          ? b.assets.map((a: any) => String(a.asset || a)).filter(Boolean)
+          : null;
+        if (list && list.length) {
+          setAssets(list);
+          setAsset((cur) => (list.includes(cur) ? cur : list[0]));
+        }
+      })
+      .catch(() => null);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
@@ -34,7 +50,7 @@ export function TradeTicket({ defaultStake = "2" }: { defaultStake?: string }) {
     }
 
     const label = signal === "call" ? "CALL" : "PUT";
-    const ok = confirm(`Confirmar ${label} com stake ${stakeNum}?`);
+    const ok = confirm(`Confirmar ${label} ${asset} com stake ${stakeNum}?`);
     if (!ok) return;
 
     setLoading(signal);
@@ -42,13 +58,13 @@ export function TradeTicket({ defaultStake = "2" }: { defaultStake?: string }) {
       const res = await fetch("/api/manual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signal }),
+        body: JSON.stringify({ signal, asset, stake: stakeNum }),
       });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; signal?: string } | null;
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; signal?: string; asset?: string; error?: string } | null;
       if (!res.ok || !data?.ok) {
-        throw new Error(`Falha ao enviar ${label}`);
+        throw new Error(data?.error ? `Falha: ${data.error}` : `Falha ao enviar ${label}`);
       }
-      showFeedback({ kind: "success", text: `${label} enviado com stake ${stakeNum}.` });
+      showFeedback({ kind: "success", text: `${label} ${data.asset} enviado com stake ${stakeNum}.` });
     } catch (err) {
       showFeedback({
         kind: "error",
@@ -64,6 +80,21 @@ export function TradeTicket({ defaultStake = "2" }: { defaultStake?: string }) {
   return (
     <div className="bg-surface border border-border rounded-lg p-4">
       <h3 className="text-sm font-medium">Operação Manual</h3>
+
+      <label htmlFor="trade-asset" className="mt-3 block text-xs text-muted">
+        Ativo
+      </label>
+      <select
+        id="trade-asset"
+        value={asset}
+        disabled={busy}
+        onChange={(e) => setAsset(e.target.value)}
+        className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent disabled:opacity-60"
+      >
+        {assets.map((a) => (
+          <option key={a} value={a}>{a}</option>
+        ))}
+      </select>
 
       <label htmlFor="trade-stake" className="mt-3 block text-xs text-muted">
         Stake atual
@@ -127,7 +158,7 @@ export function TradeTicket({ defaultStake = "2" }: { defaultStake?: string }) {
       )}
 
       <p className="mt-3 text-[11px] leading-relaxed text-muted">
-        execução em até 5s · conta PRACTICE · Kelly 2%
+        execução em até 5s · conta PRACTICE · respeita teto de stake
       </p>
     </div>
   );

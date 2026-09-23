@@ -1,4 +1,13 @@
-"""Robô IQOption DEMO - Binárias BTCUSD | MTF pullback (H1 + RSI M15) + Kelly 2%."""
+"""Robô IQOption DEMO - Binárias multi-ativo OTC | donchian_fade M15 + Kelly 2%.
+
+- Opera todos os cfg.ASSETS em ciclo sequencial (1 scan ~= todos os ativos).
+- Resultado de trade NÃO bloqueia o loop: posições ficam em self.pending e são
+  conciliadas a cada ciclo (_reconcile_pending) via get_betinfo pontual.
+- Trava global: no máximo cfg.MAX_CONCURRENT posições pendentes simultâneas
+  (manual via cockpit bypassa a trava, com log explícito).
+- Log de trades com coluna asset; arquivo legado sem a coluna é preservado
+  como *_legacy.csv e um novo é iniciado.
+"""
 import csv
 import json
 import logging
@@ -22,30 +31,47 @@ logging.basicConfig(
 )
 log = logging.getLogger("iqrobot")
 
+TRADE_HEADER = ["time", "asset", "signal", "info", "payout", "winrate",
+                "kelly", "stake", "profit", "balance"]
+
 
 class Bot:
     def __init__(self):
         self.api = IQ_Option(cfg.EMAIL, cfg.PASSWORD)
-        self.asset = cfg.ASSET
+        self.assets = list(cfg.ASSETS)
         self.profit = 0.0
+        self.asset_profit = {a: 0.0 for a in self.assets}
+        self.history: dict[str, deque] = {a: deque(maxlen=cfg.KELLY_LOOKBACK) for a in self.assets}
         self.buys_attempted = 0
         self.buys_rejected = 0
-        self.last_signal = None
-        self.last_payout = None
-        self.last_candle_key = None
-        self.last_check = None
-        self.history: deque[bool] = deque(maxlen=cfg.KELLY_LOOKBACK)
+        self.last_signal: dict[str, str | None] = {}
+        self.last_payout: dict[str, float] = {}
+        self.last_candle_key: dict[str, str] = {}
+        self.last_check: dict[str, str] = {}
+        self.pending: list[dict] = []
         self.martingale_step = 0
         self.current_amount = cfg.AMOUNT
+        self._detail_cache: tuple[float, object] = (0.0, None)
         self._trade_log_init()
 
+    # ---------- log de trades ----------
     def _trade_log_init(self):
         if not os.path.exists(cfg.TRADE_LOG):
             os.makedirs(os.path.dirname(cfg.TRADE_LOG) or ".", exist_ok=True)
             with open(cfg.TRADE_LOG, "w", newline="", encoding="utf-8") as f:
-                csv.writer(f).writerow(
-                    ["time", "signal", "info", "payout", "winrate",
-                     "kelly", "stake", "profit", "balance"])
+                csv.writer(f).writerow(TRADE_HEADER)
+            return
+        try:
+            with open(cfg.TRADE_LOG, encoding="utf-8") as f:
+                header = f.readline().strip().split(",")
+            if header != TRADE_HEADER:
+                legacy = cfg.TRADE_LOG.replace(".csv", "_legacy.csv")
+                os.rename(cfg.TRADE_LOG, legacy)
+                log.info(f"Trade log legado preservado em {legacy}; iniciando novo com coluna asset.")
+                with open(cfg.TRADE_LOG, "w", newline="", encoding="utf-8") as f:
+                    csv.writer(f).writerow(TRADE_HEADER)
+        except Exception as e:
+            log.warning(f"trade_log_init: {e}")
 
     def _trade_log(self, row: list):
         with open(cfg.TRADE_LOG, "a", newline="", encoding="utf-8") as f:
@@ -53,6 +79,7 @@ class Bot:
         # sem disco no Railway: espelha no dataset HF (se HF_TOKEN + HF_DATASET_REPO setados)
         sync_file(cfg.TRADE_LOG)
 
+    # ---------- conexão ----------
     def connect(self) -> bool:
         for attempt in range(1, 6):
             try:
@@ -76,11 +103,12 @@ class Bot:
         log.warning("Conexão perdida, reconectando...")
         return self.connect()
 
-    def candles_df(self, timeframe: int, count: int) -> pd.DataFrame | None:
+    # ---------- dados ----------
+    def candles_df(self, asset: str, timeframe: int, count: int) -> pd.DataFrame | None:
         try:
-            candles = self.api.get_candles(self.asset, timeframe, count, time.time())
+            candles = self.api.get_candles(asset, timeframe, count, time.time())
         except Exception as e:
-            log.warning(f"get_candles falhou {self.asset}: {e}")
+            log.warning(f"get_candles falhou {asset}: {e}")
             return None
         if not candles:
             return None
@@ -91,10 +119,24 @@ class Bot:
                 df[c] = df.get("close", 0)
         return df
 
-    def get_payout(self) -> float:
+    def _fetch_detail(self):
+        """get_binary_option_detail com cache de 60s (a chamada é lenta/instável)."""
+        ts, cached = self._detail_cache
+        if cached is not None and time.time() - ts < 60:
+            return cached
         try:
             detail = self.api.get_binary_option_detail()
-            v = detail.get(self.asset) if isinstance(detail, dict) else None
+        except Exception as e:
+            log.warning(f"detail fallback: {e}")
+            return cached  # usa último conhecido (pode ser None)
+        self._detail_cache = (time.time(), detail)
+        return detail
+
+    def get_payout(self, asset: str, detail=None) -> float:
+        try:
+            if detail is None:
+                detail = self.api.get_binary_option_detail()
+            v = detail.get(asset) if isinstance(detail, dict) else None
             if isinstance(v, dict):
                 # estrutura real: {"binary": {"option": {"profit": {"commission": X}}}, ...}
                 for k in ("binary", "turbo"):
@@ -115,12 +157,12 @@ class Bot:
             elif isinstance(v, (int, float)):
                 return float(v) / 100 if v > 1 else float(v)
         except Exception as e:
-            log.warning(f"payout fallback: {e}")
+            log.warning(f"payout fallback {asset}: {e}")
         return cfg.KELLY_PAYOUT_DEFAULT
 
-    def calc_stake(self, payout: float) -> tuple[float, float, float]:
+    def calc_stake(self, asset: str, payout: float) -> tuple[float, float, float]:
         balance = float(self.api.get_balance() or 0)
-        p = empirical_winrate(list(self.history), cfg.KELLY_PRIOR,
+        p = empirical_winrate(list(self.history[asset]), cfg.KELLY_PRIOR,
                               prior_weight=cfg.KELLY_PRIOR_WEIGHT)
         if cfg.USE_KELLY:
             stake, kfull = kelly_fraction_stake(
@@ -129,71 +171,82 @@ class Bot:
             return stake, p, kfull
         return round(self.current_amount, 2), p, 0.0
 
-    def _wait_result(self, order_id, timeout: float) -> float | None:
-        """Aguarda o resultado com deadline; heartbeat segue vivo durante a espera."""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                ok, data = self.api.get_betinfo(order_id)
-            except Exception as e:
-                log.warning(f"get_betinfo exceção id={order_id}: {e}")
-                time.sleep(10)
-                continue
-            if ok and data:
-                try:
-                    node = data["result"]["data"][str(order_id)]
-                except KeyError:
-                    time.sleep(5)
-                    continue
-                if node.get("win") not in ("", None):
-                    try:
-                        return float(node["profit"]) - float(node["deposit"])
-                    except (KeyError, TypeError, ValueError):
-                        return None
-            self.last_check = f"aguardando resultado id={order_id}"
-            self._write_status()
-            time.sleep(5)
-        return None
-
-    def trade(self, action: str, stake: float) -> float | None:
+    # ---------- execução não-bloqueante ----------
+    def _fire_buy(self, asset: str, action: str, stake: float):
+        """Dispara o buy e retorna order_id (sem aguardar resultado)."""
         self.buys_attempted += 1
         try:
             balance_before = float(self.api.get_balance() or 0)
         except Exception:
             balance_before = 0.0
-        ok, order_id = self.api.buy(stake, self.asset, action, cfg.EXPIRATION)
+        ok, order_id = self.api.buy(stake, asset, action, cfg.EXPIRATION)
         if not ok:
             self.buys_rejected += 1
-            log.error(f"Buy rejeitado ({self.buys_rejected}/{self.buys_attempted}): {order_id} (ativo={self.asset})")
+            log.error(f"Buy rejeitado ({self.buys_rejected}/{self.buys_attempted}): {order_id} (ativo={asset})")
             return None
-        log.info(f"TRADE {action.upper()} {self.asset} M{cfg.EXPIRATION} stake={stake} id={order_id}")
-        try:
-            profit = self._wait_result(order_id, cfg.EXPIRATION * 60 + 180)
-            if profit is not None:
-                return profit
-            # deadline sem resposta: estima via delta de saldo (não trava o bot)
-            try:
-                balance_now = float(self.api.get_balance() or 0)
-                est = round(balance_now - balance_before, 2)
-            except Exception:
-                est = 0.0
-            log.warning(f"RESULT_TIMEOUT id={order_id} — sem betinfo; profit estimado via saldo: {est:+.2f}")
-            return est
-        except Exception as e:
-            log.error(f"check_win falhou id={order_id}: {e}")
-            return 0.0
+        log.info(f"TRADE {action.upper()} {asset} M{cfg.EXPIRATION} stake={stake} id={order_id}")
+        return {"order_id": order_id, "asset": asset, "action": action,
+                "stake": stake, "balance_before": balance_before,
+                "deadline": time.time() + cfg.EXPIRATION * 60 + 180,
+                "signal": None, "info": None, "payout": None, "p": None, "kfull": None}
 
-    def update_result(self, signal: str, info: object, payout: float,
+    def _poll_pending(self, order: dict) -> float | None:
+        """Uma consulta pontual de resultado; None = ainda pendente/desconhecido."""
+        try:
+            ok, data = self.api.get_betinfo(order["order_id"])
+        except Exception as e:
+            log.warning(f"get_betinfo exceção id={order['order_id']}: {e}")
+            return None
+        if ok and data:
+            try:
+                node = data["result"]["data"][str(order["order_id"])]
+            except KeyError:
+                return None
+            if node.get("win") not in ("", None):
+                try:
+                    return float(node["profit"]) - float(node["deposit"])
+                except (KeyError, TypeError, ValueError):
+                    return None
+        return None
+
+    def _settle(self, order: dict, profit: float, estimated: bool = False):
+        tag = "RESULT_TIMEOUT(est)" if estimated else ("WIN" if profit > 0 else "LOSS")
+        self.update_result(order["asset"], order.get("signal") or order["action"],
+                           order.get("info") or "AUTO", order.get("payout") or 0,
+                           order.get("p") or 0, order.get("kfull") or 0,
+                           order["stake"], round(profit, 2))
+        log.info(f"{tag} {order['asset']} {profit:+.2f} id={order['order_id']}")
+
+    def _reconcile_pending(self):
+        for order in list(self.pending):
+            profit = self._poll_pending(order)
+            if profit is not None:
+                self.pending.remove(order)
+                self._settle(order, profit)
+                continue
+            if time.time() > order["deadline"]:
+                self.pending.remove(order)
+                try:
+                    balance_now = float(self.api.get_balance() or 0)
+                    est = round(balance_now - order["balance_before"], 2)
+                except Exception:
+                    est = 0.0
+                log.warning(f"RESULT_TIMEOUT id={order['order_id']} — sem betinfo; profit estimado via saldo: {est:+.2f}")
+                self._settle(order, est, estimated=True)
+
+    # ---------- resultado ----------
+    def update_result(self, asset: str, signal: str, info: object, payout: float,
                       p: float, kfull: float, stake: float, profit: float):
         self.profit += profit
+        self.asset_profit[asset] = self.asset_profit.get(asset, 0.0) + profit
         won = profit > 0
-        self.history.append(won)
+        self.history[asset].append(won)
         balance = self.api.get_balance()
         tag = "WIN" if won else "LOSS"
-        wr = empirical_winrate(list(self.history), cfg.KELLY_PRIOR,
+        wr = empirical_winrate(list(self.history[asset]), cfg.KELLY_PRIOR,
                                prior_weight=cfg.KELLY_PRIOR_WEIGHT)
-        log.info(f"{tag} {profit:+.2f} | Sessão {self.profit:+.2f} | saldo {balance} | wr {wr:.2f}")
-        self._trade_log([datetime.now().isoformat(timespec="seconds"), signal,
+        log.info(f"{tag} {asset} {profit:+.2f} | Sessão {self.profit:+.2f} | saldo {balance} | wr {wr:.2f}")
+        self._trade_log([datetime.now().isoformat(timespec="seconds"), asset, signal,
                          info, round(payout, 4), round(p, 4),
                          kfull, stake, round(profit, 2), balance])
         self._write_status()
@@ -218,32 +271,41 @@ class Bot:
     def _write_status(self):
         try:
             os.makedirs(os.path.dirname(cfg.BOT_STATUS) or ".", exist_ok=True)
-            import json
+            per_asset = []
+            for a in self.assets:
+                wr = empirical_winrate(list(self.history[a]), cfg.KELLY_PRIOR,
+                                       prior_weight=cfg.KELLY_PRIOR_WEIGHT)
+                per_asset.append({
+                    "asset": a,
+                    "profit_session": round(self.asset_profit.get(a, 0.0), 2),
+                    "trades": len(self.history[a]),
+                    "winrate": round(wr, 4),
+                    "last_signal": self.last_signal.get(a),
+                    "last_payout": self.last_payout.get(a),
+                    "last_check": self.last_check.get(a),
+                })
             with open(cfg.BOT_STATUS, "w", encoding="utf-8") as f:
                 json.dump({
                     "last_tick": datetime.now(timezone.utc).isoformat(),
-                    "asset": self.asset,
+                    "asset": f"multi:{len(self.assets)}",
+                    "assets": per_asset,
                     "balance": self.api.get_balance() if hasattr(self, 'api') else None,
                     "balance_type": cfg.BALANCE_TYPE,
                     "strategy": cfg.STRATEGY,
                     "profit_session": round(self.profit, 2),
-                    "trades": len(self.history),
-                    "winrate": round(empirical_winrate(list(self.history), cfg.KELLY_PRIOR, prior_weight=cfg.KELLY_PRIOR_WEIGHT), 4),
+                    "trades": sum(len(h) for h in self.history.values()),
                     "buys_attempted": self.buys_attempted,
                     "buys_rejected": self.buys_rejected,
-                    "last_payout": self.last_payout,
-                    "last_signal": self.last_signal,
-                    "last_candle_key": self.last_candle_key,
-                    "last_check": self.last_check,
+                    "pending": len(self.pending),
+                    "max_concurrent": cfg.MAX_CONCURRENT,
                 }, f)
         except Exception:
             pass
 
-    def _check_manual(self) -> str | None:
+    def _check_manual(self) -> dict | None:
         try:
             if not os.path.exists(cfg.MANUAL_SIGNAL):
                 return None
-            import json
             with open(cfg.MANUAL_SIGNAL, encoding="utf-8") as f:
                 data = json.load(f)
             ts = data.get("ts", 0)
@@ -255,11 +317,34 @@ class Bot:
                 os.remove(cfg.MANUAL_SIGNAL)
                 return None
             os.remove(cfg.MANUAL_SIGNAL)
-            log.info(f"MANUAL {sig.upper()} solicitado via cockpit")
-            return sig
+            asset = str(data.get("asset") or self.assets[0]).upper()
+            if asset not in self.assets:
+                log.warning(f"MANUAL ignorado: ativo {asset} fora da lista {self.assets}")
+                return None
+            stake = data.get("stake")
+            try:
+                stake = float(stake) if stake is not None else None
+            except (TypeError, ValueError):
+                stake = None
+            log.info(f"MANUAL {sig.upper()} {asset} solicitado via cockpit")
+            return {"signal": sig, "asset": asset, "stake": stake}
         except Exception as e:
             log.warning(f"manual check falhou: {e}")
             return None
+
+    def _manual_stake(self, asset: str, payout: float, want: float | None) -> tuple[float, float, float]:
+        if want is not None and want > 0:
+            try:
+                balance = float(self.api.get_balance() or 0)
+            except Exception:
+                balance = 0.0
+            cap = max(balance * 0.05, cfg.KELLY_MIN)
+            if want <= cap:
+                p = empirical_winrate(list(self.history[asset]), cfg.KELLY_PRIOR,
+                                      prior_weight=cfg.KELLY_PRIOR_WEIGHT)
+                return round(want, 2), p, 0.0
+            log.warning(f"MANUAL stake {want} acima do teto {cap:.2f}; usando Kelly.")
+        return self.calc_stake(asset, payout)
 
     def stop(self) -> bool:
         if self.profit >= cfg.STOP_WIN:
@@ -280,9 +365,10 @@ class Bot:
         if not self.connect():
             return
 
-        log.info(f"START {self.asset} | {cfg.STRATEGY} RSI({cfg.RSI_PERIOD}) "
-                 f"{cfg.RSI_OVERSOLD}/{cfg.RSI_OVERBOUGHT} exit={int(cfg.RSI_REQUIRE_EXIT)} "
-                 f"H1_EMA={cfg.HTF_EMA} | Kelly {cfg.KELLY_FRACTION}x teto {cfg.KELLY_MAX_RISK*100:.0f}%")
+        log.info(f"START multi:{len(self.assets)} {','.join(self.assets)} | {cfg.STRATEGY} "
+                 f"RSI({cfg.RSI_PERIOD}) {cfg.RSI_OVERSOLD}/{cfg.RSI_OVERBOUGHT} "
+                 f"exit={int(cfg.RSI_REQUIRE_EXIT)} H1_EMA={cfg.HTF_EMA} | Kelly "
+                 f"{cfg.KELLY_FRACTION}x teto {cfg.KELLY_MAX_RISK*100:.0f}% | max_concurrent={cfg.MAX_CONCURRENT}")
         errors = 0
 
         try:
@@ -294,74 +380,85 @@ class Bot:
                         time.sleep(60)
                         continue
                     self._write_status()
-                    payout = self.get_payout()
-                    if payout < cfg.PAYOUT_MIN:
-                        log.info(f"Payout {payout:.2f} < mínimo, aguardando.")
+                    detail = self._fetch_detail()
+                    if detail is None:
+                        log.info("Sem detail de payout, aguardando.")
                         time.sleep(60)
                         continue
+                    self._reconcile_pending()
 
                     # sinal manual tem prioridade (botao cockpit)
                     manual = self._check_manual()
                     if manual:
-                        stake, p, kfull = self.calc_stake(payout)
-                        profit = self.trade(manual, stake)
-                        if profit is None:
-                            time.sleep(5)
-                            continue
-                        self.update_result(manual, "MANUAL", payout, p, kfull, stake, profit)
+                        asset = manual["asset"]
+                        payout = self.get_payout(asset, detail)
+                        if payout < cfg.PAYOUT_MIN:
+                            log.info(f"MANUAL {asset} ignorado: payout {payout:.2f} < mínimo.")
+                        else:
+                            stake, p, kfull = self._manual_stake(asset, payout, manual["stake"])
+                            order = self._fire_buy(asset, manual["signal"], stake)
+                            if order:
+                                order.update({"signal": manual["signal"], "info": "MANUAL",
+                                              "payout": payout, "p": p, "kfull": kfull})
+                                self.pending.append(order)
+                                if len(self.pending) > cfg.MAX_CONCURRENT:
+                                    log.warning(f"MANUAL bypass cap ({len(self.pending)}/{cfg.MAX_CONCURRENT} pendentes).")
                         time.sleep(5)
                         continue
 
-                    df = self.candles_df(cfg.TIMEFRAME, cfg.CANDLE_COUNT)
-                    if df is None or df.empty:
-                        log.warning(f"Sem candles ({self.asset} M{cfg.EXPIRATION}) — aguardando.")
-                        time.sleep(15)
-                        continue
-                    candle_key = self._candle_key(df)
-                    if candle_key == self.last_candle_key:
-                        time.sleep(15)
-                        continue
-                    self.last_candle_key = candle_key
-                    if candle_key.startswith("noclock:"):
-                        log.warning("Coluna de tempo ausente nos candles — avaliando sem dedup por candle.")
+                    for asset in self.assets:
+                        payout = self.get_payout(asset, detail)
+                        if payout < cfg.PAYOUT_MIN:
+                            continue
+                        df = self.candles_df(asset, cfg.TIMEFRAME, cfg.CANDLE_COUNT)
+                        if df is None or df.empty:
+                            log.warning(f"Sem candles ({asset} M{cfg.EXPIRATION}) — aguardando.")
+                            continue
+                        candle_key = self._candle_key(df)
+                        if candle_key == self.last_candle_key.get(asset):
+                            continue
+                        self.last_candle_key[asset] = candle_key
+                        if candle_key.startswith("noclock:"):
+                            log.warning(f"{asset}: coluna de tempo ausente nos candles — avaliando sem dedup por candle.")
 
-                    df_h1 = None
-                    if cfg.STRATEGY == "rsi_mtf_pullback":
-                        df_h1 = self.candles_df(cfg.HTF_TIMEFRAME, cfg.HTF_COUNT)
-                        if df_h1 is None or df_h1.empty:
-                            time.sleep(15)
+                        df_h1 = None
+                        if cfg.STRATEGY == "rsi_mtf_pullback":
+                            df_h1 = self.candles_df(asset, cfg.HTF_TIMEFRAME, cfg.HTF_COUNT)
+                            if df_h1 is None or df_h1.empty:
+                                continue
+
+                        signal = get_signal(cfg.STRATEGY, df, cfg, df_h1)
+                        self.last_signal[asset] = signal
+                        close_px = float(df["close"].iloc[-1])
+                        if cfg.STRATEGY == "donchian_fade":
+                            info: object = f"DC{cfg.DONCHIAN_N}"
+                            n = cfg.DONCHIAN_N
+                            hi = float(df["high"].iloc[-n - 1:-1].max())
+                            lo = float(df["low"].iloc[-n - 1:-1].min())
+                            detail_s = f"close={close_px:.2f} hi20={hi:.2f} lo20={lo:.2f}"
+                        else:
+                            info = round(float(rsi_series(df["close"], cfg.RSI_PERIOD).iloc[-1]), 1)
+                            detail_s = f"close={close_px:.2f} RSI={info}"
+                        self.last_payout[asset] = payout
+                        self.last_check[asset] = f"{detail_s} signal={signal} payout={payout:.2f}"
+                        log.info(f"[CHECK] {asset} {candle_key} {detail_s} -> {signal} (payout {payout:.2f})")
+                        self._write_status()
+                        if not signal:
+                            continue
+                        if len(self.pending) >= cfg.MAX_CONCURRENT:
+                            log.info(f"SINAL {signal.upper()} {asset} ignorado: cap {cfg.MAX_CONCURRENT} pendentes atingido.")
                             continue
 
-                    signal = get_signal(cfg.STRATEGY, df, cfg, df_h1)
-                    self.last_signal = signal
-                    close_px = float(df["close"].iloc[-1])
-                    if cfg.STRATEGY == "donchian_fade":
-                        info: object = f"DC{cfg.DONCHIAN_N}"
-                        n = cfg.DONCHIAN_N
-                        hi = float(df["high"].iloc[-n - 1:-1].max())
-                        lo = float(df["low"].iloc[-n - 1:-1].min())
-                        detail = f"close={close_px:.2f} hi20={hi:.2f} lo20={lo:.2f}"
-                    else:
-                        info = round(float(rsi_series(df["close"], cfg.RSI_PERIOD).iloc[-1]), 1)
-                        detail = f"close={close_px:.2f} RSI={info}"
-                    self.last_payout = payout
-                    self.last_check = f"{detail} signal={signal} payout={payout:.2f}"
-                    log.info(f"[CHECK] {candle_key} {detail} -> {signal} (payout {payout:.2f})")
-                    self._write_status()
-                    if not signal:
-                        time.sleep(15)
-                        continue
-
-                    stake, p, kfull = self.calc_stake(payout)
-                    log.info(f"SINAL {signal.upper()} {info} payout={payout:.2f} "
-                             f"p={p:.2f} kelly={kfull:.3f} stake={stake:.2f}")
-                    profit = self.trade(signal, stake)
-                    if profit is None:
-                        time.sleep(30)
-                        continue
-                    self.update_result(signal, info, payout, p, kfull, stake, profit)
+                        stake, p, kfull = self.calc_stake(asset, payout)
+                        log.info(f"SINAL {signal.upper()} {asset} {info} payout={payout:.2f} "
+                                 f"p={p:.2f} kelly={kfull:.3f} stake={stake:.2f}")
+                        order = self._fire_buy(asset, signal, stake)
+                        if order:
+                            order.update({"signal": signal, "info": info,
+                                          "payout": payout, "p": p, "kfull": kfull})
+                            self.pending.append(order)
                     errors = 0
-                    time.sleep(5)
+                    time.sleep(15)
                 except KeyboardInterrupt:
                     raise
                 except Exception as e:

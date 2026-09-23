@@ -14,6 +14,7 @@ import {
 
 export interface TradeItem {
   time: string
+  asset?: string
   signal: string
   info: string
   payout: string
@@ -47,20 +48,28 @@ function toCSVCell(v: unknown): string {
 export function TradesHistoryFull({ trades }: { trades: any[] }) {
   const [search, setSearch] = React.useState("")
   const [filter, setFilter] = React.useState<ResultFilter>("all")
+  const [assetFilter, setAssetFilter] = React.useState<string>("all")
   const [page, setPage] = React.useState(1)
 
   const rows = React.useMemo(() => (Array.isArray(trades) ? trades : []), [trades])
+
+  const assetOptions = React.useMemo(() => {
+    const s = new Set<string>()
+    for (const t of rows) if (t.asset) s.add(String(t.asset))
+    return [...s].sort()
+  }, [rows])
 
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase()
     return rows.filter((t) => {
       if (filter === "win" && !isWin(t)) return false
       if (filter === "loss" && !isLoss(t)) return false
+      if (assetFilter !== "all" && String(t.asset || "") !== assetFilter) return false
       if (!q) return true
-      const hay = `${t.signal ?? ""} ${t.info ?? ""} ${t.time ?? ""}`.toLowerCase()
+      const hay = `${t.asset ?? ""} ${t.signal ?? ""} ${t.info ?? ""} ${t.time ?? ""}`.toLowerCase()
       return hay.includes(q)
     })
-  }, [rows, search, filter])
+  }, [rows, search, filter, assetFilter])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(Math.max(1, page), totalPages)
@@ -77,10 +86,11 @@ export function TradesHistoryFull({ trades }: { trades: any[] }) {
   }
 
   function handleExportCSV() {
-    const header = ["Hora", "Sinal", "Info", "Stake", "Payout (%)", "Lucro", "Saldo"]
+    const header = ["Hora", "Ativo", "Sinal", "Info", "Stake", "Payout (%)", "Lucro", "Saldo"]
     const lines = filtered.map((t) =>
       [
         toCSVCell(t.time ?? ""),
+        toCSVCell(t.asset ?? ""),
         toCSVCell(t.signal ?? ""),
         toCSVCell(t.info ?? ""),
         toCSVCell(t.stake ?? ""),
@@ -146,6 +156,18 @@ export function TradesHistoryFull({ trades }: { trades: any[] }) {
           {filterBtn("win", "Wins")}
           {filterBtn("loss", "Losses")}
         </div>
+        {assetOptions.length > 0 && (
+          <select
+            value={assetFilter}
+            onChange={(e) => { setAssetFilter(e.target.value); setPage(1) }}
+            className="px-3 py-1.5 rounded text-xs bg-background/60 border border-border text-foreground focus:outline-none focus:border-accent/50"
+          >
+            <option value="all">Todos os ativos</option>
+            {assetOptions.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -160,6 +182,9 @@ export function TradesHistoryFull({ trades }: { trades: any[] }) {
                 <TableHeaderRow>
                   <TableCell className="text-[11px] uppercase tracking-wide text-muted font-medium">
                     Hora
+                  </TableCell>
+                  <TableCell className="text-[11px] uppercase tracking-wide text-muted font-medium">
+                    Ativo
                   </TableCell>
                   <TableCell className="text-[11px] uppercase tracking-wide text-muted font-medium">
                     Sinal
@@ -191,6 +216,9 @@ export function TradesHistoryFull({ trades }: { trades: any[] }) {
                     <TableRow key={`${t.time}-${i}`}>
                       <TableCell className="font-mono text-xs whitespace-nowrap">
                         {String(t.time || "—")}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs whitespace-nowrap">
+                        {String(t.asset || "—")}
                       </TableCell>
                       <TableCell>
                         <span

@@ -21,6 +21,16 @@ PASSWORD = os.getenv("IQ_PASSWORD", "")
 BALANCE_TYPE = os.getenv("IQ_BALANCE_TYPE", "PRACTICE").upper()  # PRACTICE | REAL
 
 ASSET = os.getenv("IQ_ASSET", "BTCUSD")
+# Multi-ativo: IQ_ASSETS="EURUSD-OTC,GBPUSD-OTC,..." (fallback: [IQ_ASSET])
+def _get_list(key: str, fallback: list) -> list:
+    raw = os.getenv(key, "")
+    if raw.strip():
+        return [a.strip().upper() for a in raw.split(",") if a.strip()]
+    return fallback
+
+ASSETS = _get_list("IQ_ASSETS", [ASSET])
+# Trava global de exposição: no máximo N posições pendentes simultâneas
+MAX_CONCURRENT = _get_int("IQ_MAX_CONCURRENT", 3)
 TIMEFRAME = _get_int("IQ_TIMEFRAME", 900)  # segundos: 900 = M15
 EXPIRATION = _get_int("IQ_EXPIRATION", 15)  # minutos p/ binária (igual ao M15)
 AMOUNT = _get_float("IQ_AMOUNT", 2.0)
