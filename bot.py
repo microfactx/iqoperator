@@ -39,6 +39,17 @@ TRADE_HEADER = ["time", "asset", "signal", "info", "payout", "winrate",
 class Bot:
     def __init__(self):
         self.api = IQ_Option(cfg.EMAIL, cfg.PASSWORD)
+        # Serializa reconnects: threads abandonadas (timeout) chamam connect() por
+        # conta própria dentro da lib; sem lock elas trocam self.api no meio do
+        # voo e geram 'NoneType is_ssl' / corridas no websocket.
+        self._api_lock = threading.Lock()
+        _orig_connect = self.api.connect
+
+        def _locked_connect(*a, **k):
+            with self._api_lock:
+                return _orig_connect(*a, **k)
+
+        self.api.connect = _locked_connect  # type: ignore[method-assign]
         self.assets = list(cfg.ASSETS)
         self.profit = 0.0
         self.asset_profit = {a: 0.0 for a in self.assets}
@@ -494,7 +505,9 @@ class Bot:
                         time.sleep(5)
                         continue
 
-                    for asset in self.assets:
+                    for i, asset in enumerate(self.assets):
+                        if i:
+                            time.sleep(cfg.ASSET_DELAY)
                         payout = self.get_payout(asset, detail)
                         if payout < cfg.PAYOUT_MIN:
                             continue
@@ -547,7 +560,7 @@ class Bot:
                             self.pending.append(order)
                             self._save_pending()
                     errors = 0
-                    time.sleep(15)
+                    time.sleep(cfg.SCAN_SLEEP)
                 except KeyboardInterrupt:
                     raise
                 except Exception as e:
