@@ -66,6 +66,7 @@ class Bot:
         self._detail_cache: tuple[float, object] = (0.0, None)
         self._last_balance: float | None = None
         self._last_progress = time.time()
+        self._candle_fail: dict[str, list] = {}  # asset -> [falhas_seg, pula_até]
         self._trade_log_init()
         self._load_pending()
 
@@ -199,11 +200,13 @@ class Bot:
             lambda: self.api.get_candles(asset, timeframe, count, time.time()),
             timeout, f"get_candles {asset}")
         if not ok:
-            log.warning(f"get_candles {asset}: {res} — pulando ciclo.")
+            self._note_candle_fail(asset, str(res))
             return None
         candles = res
         if not candles:
+            self._note_candle_fail(asset, "vazio")
             return None
+        self._candle_fail[asset] = [0, 0.0]
         df = pd.DataFrame(candles)
         df = df.rename(columns={"max": "high", "min": "low"})
         for c in ("high", "low", "close", "open"):
@@ -349,6 +352,25 @@ class Bot:
                          info, round(payout, 4), round(p, 4),
                          kfull, stake, round(profit, 2), balance])
         self._write_status()
+
+    def _note_candle_fail(self, asset: str, reason):
+        fails, _ = self._candle_fail.get(asset, [0, 0.0])
+        fails += 1
+        if fails >= cfg.CANDLE_FAIL_LIMIT:
+            until = time.time() + cfg.CANDLE_COOLDOWN
+            self._candle_fail[asset] = [fails, until]
+            log.warning(f"{asset}: {fails} falhas de candles ({reason}) — em cooldown {cfg.CANDLE_COOLDOWN}s.")
+        else:
+            self._candle_fail[asset] = [fails, 0.0]
+            log.warning(f"get_candles {asset}: {reason} — pulando ciclo ({fails}/{cfg.CANDLE_FAIL_LIMIT}).")
+
+    def _in_cooldown(self, asset: str) -> bool:
+        fails, until = self._candle_fail.get(asset, [0, 0.0])
+        if until and time.time() < until:
+            return True
+        if until and time.time() >= until:
+            self._candle_fail[asset] = [0, 0.0]
+        return False
 
     def _candle_key(self, df) -> str:
         """Chave robusta do último candle (várias versões da API usam 'from'/'at'/etc)."""
@@ -508,6 +530,8 @@ class Bot:
                     for i, asset in enumerate(self.assets):
                         if i:
                             time.sleep(cfg.ASSET_DELAY)
+                        if self._in_cooldown(asset):
+                            continue
                         payout = self.get_payout(asset, detail)
                         if payout < cfg.PAYOUT_MIN:
                             continue

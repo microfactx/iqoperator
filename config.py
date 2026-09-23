@@ -48,6 +48,9 @@ WATCHDOG_TIMEOUT = _get_int("WATCHDOG_TIMEOUT", 300)
 # Ritmo do scan multi-ativo (estratégia M15: scan agressivo só gera rate-limit)
 SCAN_SLEEP = _get_int("IQ_SCAN_SLEEP", 45)
 ASSET_DELAY = _get_float("IQ_ASSET_DELAY", 2.0)
+# Backoff: após N falhas seguidas de candles, pula o ativo por M segundos
+CANDLE_FAIL_LIMIT = _get_int("CANDLE_FAIL_LIMIT", 3)
+CANDLE_COOLDOWN = _get_int("CANDLE_COOLDOWN", 300)
 TIMEFRAME = _get_int("IQ_TIMEFRAME", 900)  # segundos: 900 = M15
 EXPIRATION = _get_int("IQ_EXPIRATION", 15)  # minutos p/ binária (igual ao M15)
 AMOUNT = _get_float("IQ_AMOUNT", 2.0)
