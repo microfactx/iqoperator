@@ -65,8 +65,12 @@ class Bot:
         self.current_amount = cfg.AMOUNT
         self._detail_cache: tuple[float, object] = (0.0, None)
         self._last_balance: float | None = None
+        self._balance_ts = 0.0
         self._last_progress = time.time()
         self._candle_fail: dict[str, list] = {}  # asset -> [falhas_seg, pula_até]
+        self._asset_cursor = 0
+        self._empty_scans = 0
+        self._quiet_until = 0.0
         self._trade_log_init()
         self._load_pending()
 
@@ -94,10 +98,13 @@ class Bot:
             return False, f"sem resposta em {label}"
 
     def _safe_balance(self, timeout: float = 20) -> float:
+        if self._last_balance is not None and time.time() - self._balance_ts < cfg.BALANCE_TTL:
+            return self._last_balance
         ok, res = self._call_timeout(lambda: float(self.api.get_balance() or 0),
                                      timeout, "get_balance")
         if ok:
             self._last_balance = res
+            self._balance_ts = time.time()
             return res
         log.warning(f"get_balance falhou ({res}); usando último conhecido.")
         return self._last_balance or 0.0
@@ -372,6 +379,13 @@ class Bot:
             self._candle_fail[asset] = [0, 0.0]
         return False
 
+    def _next_subset(self) -> list[str]:
+        """Round-robin: N ativos por ciclo (corta a taxa de requests sem perder cobertura)."""
+        n = max(1, min(cfg.ASSETS_PER_CYCLE, len(self.assets)))
+        subset = [self.assets[(self._asset_cursor + i) % len(self.assets)] for i in range(n)]
+        self._asset_cursor = (self._asset_cursor + n) % len(self.assets)
+        return subset
+
     def _candle_key(self, df) -> str:
         """Chave robusta do último candle (várias versões da API usam 'from'/'at'/etc)."""
         last = df.iloc[-1]
@@ -500,6 +514,10 @@ class Bot:
                         time.sleep(60)
                         continue
                     self._write_status()
+                    if time.time() < self._quiet_until:
+                        # disjuntor global: silêncio total p/ resetar o throttle
+                        time.sleep(15)
+                        continue
                     detail = self._fetch_detail()
                     if detail is None:
                         log.info("Sem detail de payout, aguardando.")
@@ -527,7 +545,9 @@ class Bot:
                         time.sleep(5)
                         continue
 
-                    for i, asset in enumerate(self.assets):
+                    subset = self._next_subset()
+                    got = 0
+                    for i, asset in enumerate(subset):
                         if i:
                             time.sleep(cfg.ASSET_DELAY)
                         if self._in_cooldown(asset):
@@ -539,6 +559,7 @@ class Bot:
                         if df is None or df.empty:
                             log.warning(f"Sem candles ({asset} M{cfg.EXPIRATION}) — aguardando.")
                             continue
+                        got += 1
                         candle_key = self._candle_key(df)
                         if candle_key == self.last_candle_key.get(asset):
                             continue
@@ -583,6 +604,14 @@ class Bot:
                                           "payout": payout, "p": p, "kfull": kfull})
                             self.pending.append(order)
                             self._save_pending()
+                    if got == 0:
+                        self._empty_scans += 1
+                        if self._empty_scans >= 3:
+                            self._empty_scans = 0
+                            self._quiet_until = time.time() + cfg.GLOBAL_COOLDOWN
+                            log.warning(f"Disjuntor global: 3 scans sem candles — silêncio de {cfg.GLOBAL_COOLDOWN}s p/ resetar o throttle.")
+                    else:
+                        self._empty_scans = 0
                     errors = 0
                     time.sleep(cfg.SCAN_SLEEP)
                 except KeyboardInterrupt:
