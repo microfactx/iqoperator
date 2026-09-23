@@ -53,7 +53,81 @@ class Bot:
         self.martingale_step = 0
         self.current_amount = cfg.AMOUNT
         self._detail_cache: tuple[float, object] = (0.0, None)
+        self._last_balance: float | None = None
+        self._last_progress = time.time()
         self._trade_log_init()
+        self._load_pending()
+
+    # ---------- chamadas com timeout ----------
+    @staticmethod
+    def _call_timeout(fn, timeout: float, label: str):
+        """Roda fn() com prazo; estourou -> (False, 'TIMEOUT...'). Nunca trava o loop."""
+        import queue
+        q: queue.Queue = queue.Queue()
+
+        def _w():
+            try:
+                q.put((True, fn()))
+            except Exception as e:  # noqa: BLE001
+                q.put((False, f"{type(e).__name__}: {e}"))
+
+        t = threading.Thread(target=_w, daemon=True)
+        t.start()
+        t.join(timeout)
+        if t.is_alive():
+            return False, f"TIMEOUT após {timeout:.0f}s em {label}"
+        try:
+            return q.get_nowait()
+        except Exception:
+            return False, f"sem resposta em {label}"
+
+    def _safe_balance(self, timeout: float = 20) -> float:
+        ok, res = self._call_timeout(lambda: float(self.api.get_balance() or 0),
+                                     timeout, "get_balance")
+        if ok:
+            self._last_balance = res
+            return res
+        log.warning(f"get_balance falhou ({res}); usando último conhecido.")
+        return self._last_balance or 0.0
+
+    def _touch_progress(self):
+        self._last_progress = time.time()
+
+    def _start_watchdog(self):
+        def _w():
+            while True:
+                time.sleep(30)
+                idle = time.time() - self._last_progress
+                if idle > cfg.WATCHDOG_TIMEOUT:
+                    log.error(f"WATCHDOG: sem progresso há {idle:.0f}s — reiniciando processo.")
+                    os._exit(1)
+        threading.Thread(target=_w, daemon=True).start()
+
+    # ---------- pendências em disco ----------
+    def _save_pending(self):
+        try:
+            os.makedirs(os.path.dirname(cfg.PENDING_FILE) or ".", exist_ok=True)
+            with open(cfg.PENDING_FILE, "w", encoding="utf-8") as f:
+                json.dump(self.pending, f)
+        except Exception as e:
+            log.warning(f"save_pending: {e}")
+
+    def _load_pending(self):
+        try:
+            if not os.path.exists(cfg.PENDING_FILE):
+                return
+            with open(cfg.PENDING_FILE, encoding="utf-8") as f:
+                orders = json.load(f)
+            now = time.time()
+            kept = [o for o in orders if isinstance(o, dict) and o.get("deadline", 0) > now]
+            dropped = len(orders) - len(kept)
+            if dropped:
+                log.warning(f"Descartando {dropped} pendência(s) expirada(s) do restart.")
+            self.pending = kept
+            if kept:
+                log.info(f"Recuperadas {len(kept)} pendência(s) do disco.")
+        except Exception as e:
+            log.warning(f"load_pending: {e}")
 
     # ---------- log de trades ----------
     def _trade_log_init(self):
@@ -106,28 +180,17 @@ class Bot:
 
     # ---------- dados ----------
     def candles_df(self, asset: str, timeframe: int, count: int,
-                   timeout: float = 45) -> pd.DataFrame | None:
+                   timeout: float = 30) -> pd.DataFrame | None:
         # A lib entra em `while True + reconnect` se a conexão cair no meio do
         # get_candles — sem timeout, 1 ativo congela o scan inteiro (e o heartbeat).
-        # Roda numa thread daemon: estourou o prazo, pula o ativo neste ciclo.
-        out: dict = {}
-
-        def _fetch():
-            try:
-                out["data"] = self.api.get_candles(asset, timeframe, count, time.time())
-            except Exception as e:
-                out["error"] = e
-
-        t = threading.Thread(target=_fetch, daemon=True)
-        t.start()
-        t.join(timeout)
-        if t.is_alive():
-            log.warning(f"get_candles TIMEOUT {asset} ({timeout:.0f}s) — pulando ciclo.")
+        # Roda com prazo: estourou, pula o ativo neste ciclo.
+        ok, res = self._call_timeout(
+            lambda: self.api.get_candles(asset, timeframe, count, time.time()),
+            timeout, f"get_candles {asset}")
+        if not ok:
+            log.warning(f"get_candles {asset}: {res} — pulando ciclo.")
             return None
-        if "error" in out:
-            log.warning(f"get_candles falhou {asset}: {out['error']}")
-            return None
-        candles = out.get("data")
+        candles = res
         if not candles:
             return None
         df = pd.DataFrame(candles)
@@ -138,14 +201,13 @@ class Bot:
         return df
 
     def _fetch_detail(self):
-        """get_binary_option_detail com cache de 60s (a chamada é lenta/instável)."""
+        """get_binary_option_detail com cache de 120s (a chamada é lenta/instável)."""
         ts, cached = self._detail_cache
-        if cached is not None and time.time() - ts < 60:
+        if cached is not None and time.time() - ts < 120:
             return cached
-        try:
-            detail = self.api.get_binary_option_detail()
-        except Exception as e:
-            log.warning(f"detail fallback: {e}")
+        ok, detail = self._call_timeout(self.api.get_binary_option_detail, 90, "get_all_init")
+        if not ok:
+            log.warning(f"detail fallback: {detail}")
             return cached  # usa último conhecido (pode ser None)
         self._detail_cache = (time.time(), detail)
         return detail
@@ -179,7 +241,7 @@ class Bot:
         return cfg.KELLY_PAYOUT_DEFAULT
 
     def calc_stake(self, asset: str, payout: float) -> tuple[float, float, float]:
-        balance = float(self.api.get_balance() or 0)
+        balance = self._safe_balance()
         p = empirical_winrate(list(self.history[asset]), cfg.KELLY_PRIOR,
                               prior_weight=cfg.KELLY_PRIOR_WEIGHT)
         if cfg.USE_KELLY:
@@ -191,14 +253,18 @@ class Bot:
 
     # ---------- execução não-bloqueante ----------
     def _fire_buy(self, asset: str, action: str, stake: float):
-        """Dispara o buy e retorna order_id (sem aguardar resultado)."""
+        """Dispara o buy e retorna order dict (sem aguardar resultado)."""
         self.buys_attempted += 1
-        try:
-            balance_before = float(self.api.get_balance() or 0)
-        except Exception:
-            balance_before = 0.0
-        ok, order_id = self.api.buy(stake, asset, action, cfg.EXPIRATION)
+        balance_before = self._safe_balance()
+        ok, res = self._call_timeout(
+            lambda: self.api.buy(stake, asset, action, cfg.EXPIRATION),
+            30, f"buy {asset}")
         if not ok:
+            self.buys_rejected += 1
+            log.error(f"Buy TIMEOUT ({self.buys_rejected}/{self.buys_attempted}): {res} (ativo={asset})")
+            return None
+        ok2, order_id = res
+        if not ok2:
             self.buys_rejected += 1
             log.error(f"Buy rejeitado ({self.buys_rejected}/{self.buys_attempted}): {order_id} (ativo={asset})")
             return None
@@ -210,12 +276,17 @@ class Bot:
 
     def _poll_pending(self, order: dict) -> float | None:
         """Uma consulta pontual de resultado; None = ainda pendente/desconhecido."""
-        try:
-            ok, data = self.api.get_betinfo(order["order_id"])
-        except Exception as e:
-            log.warning(f"get_betinfo exceção id={order['order_id']}: {e}")
+        ok, res = self._call_timeout(
+            lambda: self.api.get_betinfo(order["order_id"]), 30,
+            f"get_betinfo {order['order_id']}")
+        if not ok:
+            log.warning(f"get_betinfo id={order['order_id']}: {res}")
             return None
-        if ok and data:
+        try:
+            ok2, data = res
+        except (TypeError, ValueError):
+            return None
+        if ok2 and data:
             try:
                 node = data["result"]["data"][str(order["order_id"])]
             except KeyError:
@@ -240,15 +311,14 @@ class Bot:
             profit = self._poll_pending(order)
             if profit is not None:
                 self.pending.remove(order)
+                self._save_pending()
                 self._settle(order, profit)
                 continue
             if time.time() > order["deadline"]:
                 self.pending.remove(order)
-                try:
-                    balance_now = float(self.api.get_balance() or 0)
-                    est = round(balance_now - order["balance_before"], 2)
-                except Exception:
-                    est = 0.0
+                self._save_pending()
+                balance_now = self._safe_balance()
+                est = round(balance_now - order["balance_before"], 2)
                 log.warning(f"RESULT_TIMEOUT id={order['order_id']} — sem betinfo; profit estimado via saldo: {est:+.2f}")
                 self._settle(order, est, estimated=True)
 
@@ -259,7 +329,7 @@ class Bot:
         self.asset_profit[asset] = self.asset_profit.get(asset, 0.0) + profit
         won = profit > 0
         self.history[asset].append(won)
-        balance = self.api.get_balance()
+        balance = self._safe_balance()
         tag = "WIN" if won else "LOSS"
         wr = empirical_winrate(list(self.history[asset]), cfg.KELLY_PRIOR,
                                prior_weight=cfg.KELLY_PRIOR_WEIGHT)
@@ -288,6 +358,7 @@ class Bot:
 
     def _write_status(self):
         try:
+            self._touch_progress()
             os.makedirs(os.path.dirname(cfg.BOT_STATUS) or ".", exist_ok=True)
             per_asset = []
             for a in self.assets:
@@ -307,7 +378,7 @@ class Bot:
                     "last_tick": datetime.now(timezone.utc).isoformat(),
                     "asset": f"multi:{len(self.assets)}",
                     "assets": per_asset,
-                    "balance": self.api.get_balance() if hasattr(self, 'api') else None,
+                    "balance": self._safe_balance() if hasattr(self, 'api') else None,
                     "balance_type": cfg.BALANCE_TYPE,
                     "strategy": cfg.STRATEGY,
                     "profit_session": round(self.profit, 2),
@@ -352,10 +423,7 @@ class Bot:
 
     def _manual_stake(self, asset: str, payout: float, want: float | None) -> tuple[float, float, float]:
         if want is not None and want > 0:
-            try:
-                balance = float(self.api.get_balance() or 0)
-            except Exception:
-                balance = 0.0
+            balance = self._safe_balance()
             cap = max(balance * 0.05, cfg.KELLY_MIN)
             if want <= cap:
                 p = empirical_winrate(list(self.history[asset]), cfg.KELLY_PRIOR,
@@ -382,6 +450,7 @@ class Bot:
             return
         if not self.connect():
             return
+        self._start_watchdog()
 
         log.info(f"START multi:{len(self.assets)} {','.join(self.assets)} | {cfg.STRATEGY} "
                  f"RSI({cfg.RSI_PERIOD}) {cfg.RSI_OVERSOLD}/{cfg.RSI_OVERBOUGHT} "
@@ -419,6 +488,7 @@ class Bot:
                                 order.update({"signal": manual["signal"], "info": "MANUAL",
                                               "payout": payout, "p": p, "kfull": kfull})
                                 self.pending.append(order)
+                                self._save_pending()
                                 if len(self.pending) > cfg.MAX_CONCURRENT:
                                     log.warning(f"MANUAL bypass cap ({len(self.pending)}/{cfg.MAX_CONCURRENT} pendentes).")
                         time.sleep(5)
@@ -475,6 +545,7 @@ class Bot:
                             order.update({"signal": signal, "info": info,
                                           "payout": payout, "p": p, "kfull": kfull})
                             self.pending.append(order)
+                            self._save_pending()
                     errors = 0
                     time.sleep(15)
                 except KeyboardInterrupt:
@@ -487,6 +558,6 @@ class Bot:
             log.info("Interrompido pelo usuário.")
         finally:
             try:
-                log.info(f"FIM Sessão {self.profit:.2f} | Saldo {self.api.get_balance()}")
+                log.info(f"FIM Sessão {self.profit:.2f} | Saldo {self._safe_balance()}")
             except Exception:
                 log.info(f"FIM Sessão {self.profit:.2f}")

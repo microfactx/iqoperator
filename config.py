@@ -42,6 +42,9 @@ if not ASSETS:
     ASSETS = ["EURUSD-OTC"]
 # Trava global de exposição: no máximo N posições pendentes simultâneas
 MAX_CONCURRENT = _get_int("IQ_MAX_CONCURRENT", 3)
+# Pendências em disco (sobrevivem a restart) e watchdog anti-deadlock
+PENDING_FILE = os.getenv("PENDING_FILE", "data/pending.json")
+WATCHDOG_TIMEOUT = _get_int("WATCHDOG_TIMEOUT", 300)
 TIMEFRAME = _get_int("IQ_TIMEFRAME", 900)  # segundos: 900 = M15
 EXPIRATION = _get_int("IQ_EXPIRATION", 15)  # minutos p/ binária (igual ao M15)
 AMOUNT = _get_float("IQ_AMOUNT", 2.0)
