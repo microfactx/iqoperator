@@ -43,11 +43,21 @@ class Bot:
         # conta própria dentro da lib; sem lock elas trocam self.api no meio do
         # voo e geram 'NoneType is_ssl' / corridas no websocket.
         self._api_lock = threading.Lock()
+        self._last_connect_ts = 0.0
         _orig_connect = self.api.connect
 
         def _locked_connect(*a, **k):
+            # Serra autenticação: intervalo mínimo entre handshakes (a lib e as
+            # threads zumbis chamam connect() em loop durante outages; sem freio,
+            # o martelo de logins toma throttle e derruba a conta).
             with self._api_lock:
-                return _orig_connect(*a, **k)
+                wait = 15.0 - (time.time() - self._last_connect_ts)
+                if wait > 0:
+                    time.sleep(wait)
+                try:
+                    return _orig_connect(*a, **k)
+                finally:
+                    self._last_connect_ts = time.time()
 
         self.api.connect = _locked_connect  # type: ignore[method-assign]
         self.assets = list(cfg.ASSETS)
@@ -185,7 +195,7 @@ class Bot:
                 log.warning(f"Connect falhou (tent. {attempt}): {reason}")
             except Exception as e:
                 log.warning(f"Connect exceção (tent. {attempt}): {e}")
-            time.sleep(10 * attempt)
+            time.sleep(30 * attempt)
         return False
 
     def ensure_connected(self) -> bool:
@@ -511,7 +521,7 @@ class Bot:
                     if self.stop():
                         break
                     if not self.ensure_connected():
-                        time.sleep(60)
+                        time.sleep(120)
                         continue
                     self._write_status()
                     if time.time() < self._quiet_until:
