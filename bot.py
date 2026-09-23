@@ -12,6 +12,7 @@ import csv
 import json
 import logging
 import os
+import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
@@ -104,12 +105,29 @@ class Bot:
         return self.connect()
 
     # ---------- dados ----------
-    def candles_df(self, asset: str, timeframe: int, count: int) -> pd.DataFrame | None:
-        try:
-            candles = self.api.get_candles(asset, timeframe, count, time.time())
-        except Exception as e:
-            log.warning(f"get_candles falhou {asset}: {e}")
+    def candles_df(self, asset: str, timeframe: int, count: int,
+                   timeout: float = 45) -> pd.DataFrame | None:
+        # A lib entra em `while True + reconnect` se a conexão cair no meio do
+        # get_candles — sem timeout, 1 ativo congela o scan inteiro (e o heartbeat).
+        # Roda numa thread daemon: estourou o prazo, pula o ativo neste ciclo.
+        out: dict = {}
+
+        def _fetch():
+            try:
+                out["data"] = self.api.get_candles(asset, timeframe, count, time.time())
+            except Exception as e:
+                out["error"] = e
+
+        t = threading.Thread(target=_fetch, daemon=True)
+        t.start()
+        t.join(timeout)
+        if t.is_alive():
+            log.warning(f"get_candles TIMEOUT {asset} ({timeout:.0f}s) — pulando ciclo.")
             return None
+        if "error" in out:
+            log.warning(f"get_candles falhou {asset}: {out['error']}")
+            return None
+        candles = out.get("data")
         if not candles:
             return None
         df = pd.DataFrame(candles)
