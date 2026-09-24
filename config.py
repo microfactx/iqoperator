@@ -44,7 +44,9 @@ if not ASSETS:
 MAX_CONCURRENT = _get_int("IQ_MAX_CONCURRENT", 3)
 # Pendências em disco (sobrevivem a restart) e watchdog anti-deadlock
 PENDING_FILE = os.getenv("PENDING_FILE", "data/pending.json")
-WATCHDOG_TIMEOUT = _get_int("WATCHDOG_TIMEOUT", 300)
+WATCHDOG_TIMEOUT = _get_int("WATCHDOG_TIMEOUT", 120)
+# Outage global: após N ciclos consecutivos sem dados de nenhum ativo, restart forçado
+MAX_GLOBAL_ERRORS = _get_int("MAX_GLOBAL_ERRORS", 10)
 # Ritmo do scan multi-ativo (estratégia M15: scan agressivo só gera rate-limit)
 SCAN_SLEEP = _get_int("IQ_SCAN_SLEEP", 45)
 ASSET_DELAY = _get_float("IQ_ASSET_DELAY", 2.0)

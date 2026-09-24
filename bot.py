@@ -81,6 +81,8 @@ class Bot:
         self._asset_cursor = 0
         self._empty_scans = 0
         self._quiet_until = 0.0
+        self._consecutive_global_fails = 0
+        self._hard_reconnect_count = 0
         self._trade_log_init()
         self._load_pending()
 
@@ -201,10 +203,46 @@ class Bot:
     def ensure_connected(self) -> bool:
         try:
             if self.api.check_connect():
-                return True
+                # Fix 2: ping real — check_connect() pode retornar True com WS morto
+                ok, _ = self._call_timeout(
+                    lambda: self.api.get_balance(), 10, "health_ping")
+                if ok:
+                    return True
+                log.warning("check_connect()=True mas health_ping falhou — WS degradado.")
         except Exception:
             pass
         log.warning("Conexão perdida, reconectando...")
+        if self._hard_reconnect_count >= 2:
+            # Já tentou reconectar demais nesta sessão sem sucesso; restart limpo
+            log.error("Múltiplas reconexões falharam — forçando restart.")
+            os._exit(1)
+        if not self.connect():
+            return self._hard_reconnect()
+        return True
+
+    # Fix 3: reconexão destrutiva — recria a instância da API do zero
+    def _hard_reconnect(self) -> bool:
+        """Destrói a API atual e cria uma nova instância limpa."""
+        self._hard_reconnect_count += 1
+        log.warning(f"HARD RECONNECT #{self._hard_reconnect_count}: recriando instância da API")
+        try:
+            self.api.close()
+        except Exception:
+            pass
+        self.api = IQ_Option(cfg.EMAIL, cfg.PASSWORD)
+        _orig_connect = self.api.connect
+
+        def _locked_connect(*a, **k):
+            with self._api_lock:
+                wait = 15.0 - (time.time() - self._last_connect_ts)
+                if wait > 0:
+                    time.sleep(wait)
+                try:
+                    return _orig_connect(*a, **k)
+                finally:
+                    self._last_connect_ts = time.time()
+
+        self.api.connect = _locked_connect  # type: ignore[method-assign]
         return self.connect()
 
     # ---------- dados ----------
@@ -616,12 +654,19 @@ class Bot:
                             self._save_pending()
                     if got == 0:
                         self._empty_scans += 1
+                        self._consecutive_global_fails += 1
+                        if self._consecutive_global_fails >= cfg.MAX_GLOBAL_ERRORS:
+                            log.error(f"OUTAGE GLOBAL: {self._consecutive_global_fails} ciclos "
+                                      f"sem dados de nenhum ativo — restart forçado.")
+                            os._exit(1)
                         if self._empty_scans >= 3:
                             self._empty_scans = 0
                             self._quiet_until = time.time() + cfg.GLOBAL_COOLDOWN
                             log.warning(f"Disjuntor global: 3 scans sem candles — silêncio de {cfg.GLOBAL_COOLDOWN}s p/ resetar o throttle.")
                     else:
                         self._empty_scans = 0
+                        self._consecutive_global_fails = 0
+                        self._hard_reconnect_count = 0  # conexão saudável, reseta
                     errors = 0
                     time.sleep(cfg.SCAN_SLEEP)
                 except KeyboardInterrupt:
