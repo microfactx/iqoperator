@@ -152,6 +152,65 @@ def donchian_fade_signal(df: pd.DataFrame, n: int = 20) -> str | None:
     return None
 
 
+def bollinger_touch_signal(df: pd.DataFrame, period: int = 20,
+                           mult: float = 2.0) -> str | None:
+    """Toque na banda de Bollinger -> reversão.
+    Close abaixo da banda inferior -> CALL; acima da superior -> PUT."""
+    if len(df) < period + 2:
+        return None
+    close_s = df["close"]
+    sma = close_s.rolling(period).mean()
+    std = close_s.rolling(period).std()
+    upper = sma + mult * std
+    lower = sma - mult * std
+    last_close = float(close_s.iloc[-1])
+    last_upper = float(upper.iloc[-1])
+    last_lower = float(lower.iloc[-1])
+    if pd.isna(last_upper) or pd.isna(last_lower):
+        return None
+    if last_close > last_upper:
+        return "put"
+    if last_close < last_lower:
+        return "call"
+    return None
+
+
+def multi_mean_reversion_signal(df: pd.DataFrame, donchian_n: int = 20,
+                                 bb_period: int = 20, bb_mult: float = 2.0,
+                                 rsi_period: int = 14, rsi_ob: float = 70,
+                                 rsi_os: float = 30) -> str | None:
+    """Combo de 3 indicadores de reversão à média (união).
+    Dispara se QUALQUER um dos 3 detectar extremo no mesmo candle:
+      1) Donchian Fade (DC20): close fora do canal N
+      2) Bollinger Band (BB20, 2σ): close fora da banda
+      3) RSI zone (14, 30/70): RSI em zona extrema
+
+    Se mais de um indicador dispara no mesmo candle com direções
+    conflitantes (raro), descarta (sem sinal).
+
+    Frequência estimada: ~11-16 sinais/dia/ativo (vs ~7.8 do DC20 sozinho).
+    """
+    signals = set()
+
+    s1 = donchian_fade_signal(df, n=donchian_n)
+    if s1:
+        signals.add(s1)
+
+    s2 = bollinger_touch_signal(df, period=bb_period, mult=bb_mult)
+    if s2:
+        signals.add(s2)
+
+    s3 = rsi_m15_signal(df, period=rsi_period, overbought=rsi_ob,
+                        oversold=rsi_os, require_exit=False)
+    if s3:
+        signals.add(s3)
+
+    if len(signals) == 1:
+        return signals.pop()
+    # 0 sinais ou conflito (call+put) -> None
+    return None
+
+
 def ema_cross_signal(df: pd.DataFrame, fast: int = 9, slow: int = 21,
                       rsi_period: int = 14, overbought: float = 70,
                       oversold: float = 30) -> str | None:
@@ -224,5 +283,19 @@ def get_signal(strategy: str, df: pd.DataFrame, cfg, df_htf: pd.DataFrame | None
             rsi_period=cfg.RSI_PERIOD,
             overbought=cfg.RSI_OVERBOUGHT,
             oversold=cfg.RSI_OVERSOLD,
+        )
+    if strategy == "bollinger_touch":
+        return bollinger_touch_signal(
+            df, period=getattr(cfg, "BB_PERIOD", 20),
+            mult=getattr(cfg, "BB_MULT", 2.0),
+        )
+    if strategy == "multi_mean_reversion":
+        return multi_mean_reversion_signal(
+            df, donchian_n=cfg.DONCHIAN_N,
+            bb_period=getattr(cfg, "BB_PERIOD", 20),
+            bb_mult=getattr(cfg, "BB_MULT", 2.0),
+            rsi_period=cfg.RSI_PERIOD,
+            rsi_ob=cfg.RSI_OVERBOUGHT,
+            rsi_os=cfg.RSI_OVERSOLD,
         )
     return None

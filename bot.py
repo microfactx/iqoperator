@@ -630,6 +630,13 @@ class Bot:
                             hi = float(df["high"].iloc[-n - 1:-1].max())
                             lo = float(df["low"].iloc[-n - 1:-1].min())
                             detail_s = f"close={close_px:.2f} hi20={hi:.2f} lo20={lo:.2f}"
+                        elif cfg.STRATEGY == "bollinger_touch":
+                            info = f"BB{cfg.BB_PERIOD}"
+                            detail_s = f"close={close_px:.2f} BB({cfg.BB_PERIOD},{cfg.BB_MULT})"
+                        elif cfg.STRATEGY == "multi_mean_reversion":
+                            info = "MULTI"
+                            rsi_val = round(float(rsi_series(df["close"], cfg.RSI_PERIOD).iloc[-1]), 1)
+                            detail_s = f"close={close_px:.2f} RSI={rsi_val} MULTI"
                         else:
                             info = round(float(rsi_series(df["close"], cfg.RSI_PERIOD).iloc[-1]), 1)
                             detail_s = f"close={close_px:.2f} RSI={info}"
