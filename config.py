@@ -21,6 +21,40 @@ PASSWORD = os.getenv("IQ_PASSWORD", "")
 BALANCE_TYPE = os.getenv("IQ_BALANCE_TYPE", "PRACTICE").upper()  # PRACTICE | REAL
 
 ASSET = os.getenv("IQ_ASSET", "BTCUSD")
+# Multi-ativo: IQ_ASSETS="EURUSD-OTC,GBPUSD-OTC,..." (fallback: [IQ_ASSET])
+def _get_list(key: str, fallback: list) -> list:
+    raw = os.getenv(key, "")
+    if raw.strip():
+        return [a.strip().upper() for a in raw.split(",") if a.strip()]
+    return fallback
+
+ASSETS = _get_list("IQ_ASSETS", _get_list("IQ_ASSET", ["EURUSD-OTC"]))
+# Sanidade: nomes de ativo válidos (ex.: "EURUSD-OTC"); ignora entradas quebradas
+# (ex. lista colada na variável singular) em vez de travar o loop em reconnect.
+import re as _re
+_ASSET_RE = _re.compile(r"^[A-Z0-9\-]+$")
+_BAD = [a for a in ASSETS if not _ASSET_RE.match(a)]
+if _BAD:
+    import logging as _logging
+    _logging.getLogger("iqrobot").warning(f"Ignorando ativos inválidos: {_BAD}")
+    ASSETS = [a for a in ASSETS if _ASSET_RE.match(a)]
+if not ASSETS:
+    ASSETS = ["EURUSD-OTC"]
+# Trava global de exposição: no máximo N posições pendentes simultâneas
+MAX_CONCURRENT = _get_int("IQ_MAX_CONCURRENT", 3)
+# Pendências em disco (sobrevivem a restart) e watchdog anti-deadlock
+PENDING_FILE = os.getenv("PENDING_FILE", "data/pending.json")
+WATCHDOG_TIMEOUT = _get_int("WATCHDOG_TIMEOUT", 300)
+# Ritmo do scan multi-ativo (estratégia M15: scan agressivo só gera rate-limit)
+SCAN_SLEEP = _get_int("IQ_SCAN_SLEEP", 45)
+ASSET_DELAY = _get_float("IQ_ASSET_DELAY", 2.0)
+# Backoff: após N falhas seguidas de candles, pula o ativo por M segundos
+CANDLE_FAIL_LIMIT = _get_int("CANDLE_FAIL_LIMIT", 3)
+CANDLE_COOLDOWN = _get_int("CANDLE_COOLDOWN", 300)
+# Ritmo sustentável: N ativos por ciclo + disjuntor global após scans vazios
+ASSETS_PER_CYCLE = _get_int("IQ_ASSETS_PER_CYCLE", 2)
+GLOBAL_COOLDOWN = _get_int("IQ_GLOBAL_COOLDOWN", 300)
+BALANCE_TTL = _get_int("IQ_BALANCE_TTL", 30)
 TIMEFRAME = _get_int("IQ_TIMEFRAME", 900)  # segundos: 900 = M15
 EXPIRATION = _get_int("IQ_EXPIRATION", 15)  # minutos p/ binária (igual ao M15)
 AMOUNT = _get_float("IQ_AMOUNT", 2.0)

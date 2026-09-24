@@ -8,6 +8,7 @@ import { TradesFeed } from "@/components/trades-feed";
 import { WinrateTrend } from "@/components/winrate-trend";
 import { PayoutStats } from "@/components/payout-stats";
 import { TradeTicket } from "@/components/trade-ticket";
+import { AssetRanking } from "@/components/asset-ranking";
 import { StrategyConfig } from "@/components/strategy-config";
 import { DrawdownCard } from "@/components/drawdown-card";
 import { BotHealthCard } from "@/components/bot-health-card";
@@ -35,6 +36,7 @@ type S = {
   winrate: number;
   profit: number;
   balance: string;
+  byAsset: { asset: string; trades: number; wins: number; winrate: number; profit: number }[];
   last: any[];
 };
 
@@ -54,6 +56,7 @@ export default function Dashboard() {
     winrate: 0,
     profit: 0,
     balance: "n/a",
+    byAsset: [],
     last: [],
   });
 
@@ -202,6 +205,11 @@ export default function Dashboard() {
         <TradeTicket />
         <StrategyConfig bot={b} />
         <BotHealthCard bot={b} uptime={uptime} />
+      </div>
+
+      {/* Ranking por ativo */}
+      <div className="mt-6">
+        <AssetRanking byAsset={s.byAsset} />
       </div>
 
       {/* Stake evolution + Session report */}

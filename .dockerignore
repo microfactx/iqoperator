@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+cockpit-next/node_modules/
+cockpit-next/.next/
+data/
+*.log
+.opencode/
