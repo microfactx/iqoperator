@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ArrowLeftRight, TrendingUp, Trophy, Wallet } from "lucide-react"
+import { ArrowLeftRight, TrendingDown, TrendingUp, Trophy, Wallet } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NumberTicker } from "@/components/brand/number-ticker"
 
@@ -27,6 +27,17 @@ const METRIC_ICONS: Record<string, typeof Trophy> = {
   payout: Wallet,
 }
 
+function parseNumeric(val: string | number | undefined | null): number {
+  if (typeof val === "number") return val
+  if (!val) return NaN
+  const str = String(val).trim()
+  const isNegative = str.includes("-") || (str.includes("(") && str.includes(")"))
+  const cleaned = str.replace(",", ".").replace(/[^0-9.]/g, "")
+  const num = parseFloat(cleaned)
+  if (isNaN(num)) return NaN
+  return isNegative ? -Math.abs(num) : num
+}
+
 export function StatisticsCard7({
   title,
   value,
@@ -34,23 +45,28 @@ export function StatisticsCard7({
   metric = "trades",
   className,
 }: StatisticsCard7Props) {
-  const color = METRIC_COLORS[metric] || METRIC_COLORS.trades
-  const valueNum = typeof value === "number" ? value : parseFloat(String(value).replace(",", "."))
+  const valueNum = parseNumeric(value)
   const numeric = !isNaN(valueNum)
+  const isProfitNegative = metric === "profit" && numeric && valueNum < 0
+  const color =
+    metric === "profit" && numeric
+      ? (valueNum < 0 ? "#FF5470" : "#3DD68C")
+      : (METRIC_COLORS[metric] || METRIC_COLORS.trades)
+
   const ticker =
     metric === "winrate" && numeric ? (
       <NumberTicker value={valueNum * 100} decimals={1} suffix="%" />
     ) : numeric ? (
       <NumberTicker
         value={valueNum}
-        decimals={2}
+        decimals={metric === "trades" ? 0 : 2}
         prefix={valueNum >= 0 && metric === "profit" ? "+" : ""}
       />
     ) : null
 
-  const isGood = metric === "winrate" ? valueNum >= 0.5348 : metric === "profit" ? valueNum >= 0 : true
+  const isGood = !numeric ? true : metric === "winrate" ? valueNum >= 0.5348 : metric === "profit" ? valueNum >= 0 : true
   const dotColor = isGood ? "#3DD68C" : "#FF5470"
-  const Icon = METRIC_ICONS[metric] || METRIC_ICONS.trades
+  const Icon = isProfitNegative ? TrendingDown : (METRIC_ICONS[metric] || METRIC_ICONS.trades)
 
   return (
     <div

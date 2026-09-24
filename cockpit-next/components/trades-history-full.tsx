@@ -56,7 +56,7 @@ export function TradesHistoryFull({ trades }: { trades: any[] }) {
   const assetOptions = React.useMemo(() => {
     const s = new Set<string>()
     for (const t of rows) if (t.asset) s.add(String(t.asset))
-    return [...s].sort()
+    return Array.from(s).sort()
   }, [rows])
 
   const filtered = React.useMemo(() => {

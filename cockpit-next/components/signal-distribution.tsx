@@ -2,6 +2,7 @@
 
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { cn } from "@/lib/utils";
+import { ChartTooltip } from "@/components/ui/chart-tooltip";
 
 type SignalDistributionProps = {
   trades: any[];
@@ -73,17 +74,12 @@ export function SignalDistribution({ trades }: SignalDistributionProps) {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Tooltip
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  formatter={(value: any, name: any) => [
-                    `${value} sinais`,
-                    name,
-                  ]}
-                  contentStyle={{
-                    backgroundColor: "#12161D",
-                    border: "1px solid #232A36",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
+                  content={
+                    <ChartTooltip
+                      hideLabel
+                      valueFormatter={(value) => `${value} sinais`}
+                    />
+                  }
                 />
                 <Pie
                   data={data}

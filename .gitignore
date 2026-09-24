@@ -5,3 +5,4 @@ __pycache__/
 DAT_*.zip
 cockpit-next/.next/
 cockpit-next/node_modules/
+*.tsbuildinfo

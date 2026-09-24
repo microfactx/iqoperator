@@ -20,7 +20,7 @@ export function NumberTicker({
   className,
 }: NumberTickerProps) {
   const [reduced, setReduced] = useState(false);
-  const spring = useSpring(0, { duration: 0.8, bounce: 0, ease: "easeOut" });
+  const spring = useSpring(0, { duration: 0.8, bounce: 0 });
   const rounded = useTransform(spring, (v) => {
     const formatted = v.toLocaleString("pt-BR", {
       minimumFractionDigits: decimals,

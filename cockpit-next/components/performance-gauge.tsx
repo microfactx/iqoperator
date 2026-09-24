@@ -2,6 +2,7 @@ import * as React from "react"
 import { Gauge } from "lucide-react"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 import { cn } from "@/lib/utils"
+import { ChartTooltip } from "@/components/ui/chart-tooltip"
 
 export function PerformanceGauge({
   wins,
@@ -44,8 +45,12 @@ export function PerformanceGauge({
                 ))}
               </Pie>
               <Tooltip
-                contentStyle={{ background: "#151A23", border: "1px solid #232A36", borderRadius: 8 }}
-                labelStyle={{ color: "#E6E6E6" }}
+                content={
+                  <ChartTooltip
+                    hideLabel
+                    valueFormatter={(value) => `${value} trades`}
+                  />
+                }
               />
             </PieChart>
           </ResponsiveContainer>

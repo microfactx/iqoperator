@@ -4,15 +4,26 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#0B0E14",
-        surface: "#151A23",
-        border: "#232A36",
-        foreground: "#E6E6E6",
-        muted: "#8A8F98",
-        primary: { DEFAULT: "#0066FF", hover: "#0052CC" },
-        success: "#3DD68C",
-        destructive: "#FF5470",
-        accent: "#00D1A0",
+        background: "rgb(var(--background) / <alpha-value>)",
+        surface: {
+          DEFAULT: "rgb(var(--surface) / <alpha-value>)",
+          elevated: "rgb(var(--surface-elevated) / <alpha-value>)",
+          overlay: "rgb(var(--surface-overlay) / <alpha-value>)",
+        },
+        card: {
+          DEFAULT: "rgb(var(--card) / <alpha-value>)",
+          foreground: "rgb(var(--card-foreground) / <alpha-value>)",
+        },
+        border: "rgb(var(--border) / <alpha-value>)",
+        foreground: "rgb(var(--foreground) / <alpha-value>)",
+        muted: "rgb(var(--muted) / <alpha-value>)",
+        primary: {
+          DEFAULT: "rgb(var(--primary) / <alpha-value>)",
+          hover: "rgb(var(--primary-hover) / <alpha-value>)",
+        },
+        success: "rgb(var(--success) / <alpha-value>)",
+        destructive: "rgb(var(--destructive) / <alpha-value>)",
+        accent: "rgb(var(--accent) / <alpha-value>)",
       },
       borderRadius: { lg: "10px" },
     },

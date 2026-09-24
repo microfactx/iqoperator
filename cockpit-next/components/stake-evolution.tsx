@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts"
 import { cn } from "@/lib/utils"
+import { ChartTooltip } from "@/components/ui/chart-tooltip"
 
 interface StakePoint {
   trade: number
@@ -35,14 +36,10 @@ export function StakeEvolution({
   const data: StakePoint[] = React.useMemo(() => {
     if (!trades || trades.length === 0) return []
     const chrono = [...trades].reverse()
-    const points: StakePoint[] = []
-    chrono.forEach((t) => {
-      const stake = parseStake(t?.stake)
-      if (stake !== null) {
-        points.push({ trade: points.length + 1, stake })
-      }
-    })
-    return points
+    return chrono.map((t, i) => ({
+      trade: i + 1,
+      stake: parseStake(t?.stake) ?? 0,
+    }))
   }, [trades])
 
   const average = React.useMemo(() => {
@@ -58,7 +55,7 @@ export function StakeEvolution({
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-medium">Evolução do Stake (Kelly)</h2>
         {data.length > 0 && (
-          <span className="text-xs font-semibold px-2 py-0.5 rounded bg-surface border border-border text-muted">
+          <span className="text-xs font-semibold px-2 py-0.5 rounded bg-surface border border-border text-muted font-mono">
             Atual {current.toFixed(2)} · Média {average.toFixed(2)}
           </span>
         )}
@@ -70,7 +67,11 @@ export function StakeEvolution({
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+          <LineChart
+            data={data}
+            syncId="cockpit-session"
+            margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="#232A36" />
             <XAxis
               dataKey="trade"
@@ -85,10 +86,12 @@ export function StakeEvolution({
               tickFormatter={(v: number) => Number(v).toFixed(1)}
             />
             <Tooltip
-              contentStyle={{ background: "#151A23", border: "1px solid #232A36", borderRadius: 8 }}
-              labelStyle={{ color: "#E6E6E6" }}
-              formatter={(value: any) => [`${Number(value).toFixed(2)}`, "Stake"]}
-              labelFormatter={(label: any) => `Trade #${label}`}
+              content={
+                <ChartTooltip
+                  labelFormatter={(label) => `Trade #${label}`}
+                  valueFormatter={(value) => `${Number(value).toFixed(2)}`}
+                />
+              }
             />
             <ReferenceLine
               y={average}

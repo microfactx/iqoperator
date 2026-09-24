@@ -2,12 +2,13 @@ import { cn } from "@/lib/utils";
 import type { ComponentType, ReactNode } from "react";
 
 type IconProps = {
-  size?: number;
+  size?: number | string;
   className?: string;
+  [key: string]: any;
 };
 
 type SectionHeadingProps = {
-  icon: ComponentType<IconProps>;
+  icon: ComponentType<IconProps> | ComponentType<any>;
   title: string;
   hint?: string;
   action?: ReactNode;

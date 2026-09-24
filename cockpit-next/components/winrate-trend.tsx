@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts"
 import { cn } from "@/lib/utils"
+import { ChartTooltip } from "@/components/ui/chart-tooltip"
 
 const BREAKEVEN = 55.56
 const THRESHOLD = 53.48
@@ -58,7 +59,7 @@ export function WinrateTrend({
         {data.length > 0 && (
           <span
             className={cn(
-              "text-xs font-semibold px-2 py-0.5 rounded",
+              "text-xs font-semibold px-2 py-0.5 rounded font-mono",
               ok ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"
             )}
             style={{ color: ok ? "#3DD68C" : "#FF5470" }}
@@ -74,7 +75,11 @@ export function WinrateTrend({
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+          <LineChart
+            data={data}
+            syncId="cockpit-session"
+            margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="#232A36" />
             <XAxis
               dataKey="trade"
@@ -89,10 +94,12 @@ export function WinrateTrend({
               tickFormatter={(v: number) => `${v}%`}
             />
             <Tooltip
-              contentStyle={{ background: "#151A23", border: "1px solid #232A36", borderRadius: 8 }}
-              labelStyle={{ color: "#E6E6E6" }}
-              formatter={(value: any) => [`${Number(value).toFixed(2)}%`, "Winrate (janela 10)"]}
-              labelFormatter={(label: any) => `Trade #${label}`}
+              content={
+                <ChartTooltip
+                  labelFormatter={(label) => `Trade #${label}`}
+                  valueFormatter={(val) => `${Number(val).toFixed(2)}%`}
+                />
+              }
             />
             <ReferenceLine
               y={BREAKEVEN}
@@ -119,7 +126,7 @@ export function WinrateTrend({
       )}
 
       {data.length > 0 && (
-        <p className="mt-2 text-[11px] text-muted">
+        <p className="mt-2 text-[11px] text-muted font-mono">
           Winrate móvel (janela de {WINDOW} trades) · break-even {BREAKEVEN}% · meta {THRESHOLD}%
         </p>
       )}

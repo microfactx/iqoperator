@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts"
 import { cn } from "@/lib/utils"
+import { ChartTooltip } from "@/components/ui/chart-tooltip"
 
 interface PayoutPoint {
   payout: number
@@ -82,14 +83,16 @@ export function PayoutScatter({
             />
             <Tooltip
               cursor={{ strokeDasharray: "3 3", stroke: "#232A36" }}
-              contentStyle={{ background: "#151A23", border: "1px solid #232A36", borderRadius: 8 }}
-              labelStyle={{ color: "#E6E6E6" }}
-              itemStyle={{ color: "#E6E6E6" }}
-              formatter={(value: any, name: any) => {
-                const n = Number(value)
-                if (name === "Payout") return [`${Number.isFinite(n) ? n.toFixed(2) : value}%`, "Payout"]
-                return [Number.isFinite(n) ? n.toFixed(2) : value, "Lucro"]
-              }}
+              content={
+                <ChartTooltip
+                  labelFormatter={() => "Payout × Lucro"}
+                  valueFormatter={(value, name) => {
+                    const n = Number(value)
+                    if (name === "Payout") return `${Number.isFinite(n) ? n.toFixed(2) : value}%`
+                    return `${Number.isFinite(n) && n >= 0 ? "+" : ""}${Number.isFinite(n) ? n.toFixed(2) : value}`
+                  }}
+                />
+              }
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Scatter name="Wins" data={wins} fill="#3DD68C" />

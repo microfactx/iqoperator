@@ -34,7 +34,7 @@ export function stats(){
     e.trades += 1; if(pf > 0) e.wins += 1; e.profit += pf;
     byMap.set(a, e);
   }
-  const byAsset: AssetStat[] = [...byMap.entries()].map(([asset, e])=>({
+  const byAsset: AssetStat[] = Array.from(byMap.entries()).map(([asset, e])=>({
     asset, trades: e.trades, wins: e.wins,
     winrate: e.trades ? e.wins/e.trades : 0,
     profit: Math.round(e.profit*100)/100,

@@ -11,6 +11,7 @@ import {
   YAxis,
 } from "recharts"
 import { cn } from "@/lib/utils"
+import { ChartTooltip } from "@/components/ui/chart-tooltip"
 
 interface Bucket {
   faixa: string
@@ -55,7 +56,7 @@ export function PayoutStats({
       total:
         b.max === null
           ? payouts.filter((p) => p >= b.min).length
-          : payouts.filter((p) => p >= b.min && p < b.max).length,
+          : payouts.filter((p) => p >= b.min && p < (b.max as number)).length,
     }))
   }, [payouts])
 
@@ -93,10 +94,12 @@ export function PayoutStats({
               <XAxis dataKey="faixa" stroke="#8A8F98" tick={{ fontSize: 11 }} />
               <YAxis stroke="#8A8F98" tick={{ fontSize: 11 }} allowDecimals={false} />
               <Tooltip
-                contentStyle={{ background: "#151A23", border: "1px solid #232A36", borderRadius: 8 }}
-                labelStyle={{ color: "#E6E6E6" }}
-                formatter={(value: any) => [`${value} trades`, "Total"]}
-                labelFormatter={(label: any) => `Payout ${label}`}
+                content={
+                  <ChartTooltip
+                    labelFormatter={(label) => `Payout ${label}`}
+                    valueFormatter={(value) => `${value} trades`}
+                  />
+                }
               />
               <Bar dataKey="total" name="Trades" fill="#818CF8" radius={[4, 4, 0, 0]} />
             </BarChart>

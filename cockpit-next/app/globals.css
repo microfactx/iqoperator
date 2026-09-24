@@ -2,21 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 :root {
-  --background: 220 20% 6%;
-  --foreground: 0 0% 90%;
-  --primary: 219 100% 50%;
-  --card: 220 18% 11%;
+  /* Semantic Color Tokens (RGB channels for Tailwind opacity compatibility) */
+  --background: 11 14 20;           /* #0B0E14 */
+  --surface: 21 26 35;              /* #151A23 */
+  --surface-elevated: 28 35 48;     /* #1C2330 Layer 1: cards, widgets */
+  --surface-overlay: 34 42 56;      /* #222A38 Layer 2: dialogs, menus */
+  --card: 21 26 35;                 /* #151A23 */
+  --card-foreground: 230 230 230;   /* #E6E6E6 */
+
+  --border: 35 42 54;               /* #232A36 */
+  --foreground: 230 230 230;        /* #E6E6E6 */
+  --muted: 138 143 152;             /* #8A8F98 */
+
+  --primary: 0 102 255;             /* #0066FF */
+  --primary-hover: 0 82 204;        /* #0052CC */
+  --success: 61 214 140;            /* #3DD68C */
+  --destructive: 255 84 112;        /* #FF5470 */
+  --accent: 0 209 160;             /* #00D1A0 */
+
+  /* Direct hex aliases for CSS-only consumers */
+  --color-background: #0B0E14;
+  --color-surface: #151A23;
+  --color-surface-elevated: #1C2330;
+  --color-surface-overlay: #222A38;
+  --color-border: #232A36;
+  --color-foreground: #E6E6E6;
+  --color-muted: #8A8F98;
+  --color-primary: #0066FF;
+  --color-primary-hover: #0052CC;
+  --color-success: #3DD68C;
+  --color-destructive: #FF5470;
+  --color-accent: #00D1A0;
 }
 html { color-scheme: dark; }
-body { background: #0B0E14; color: #E6E6E6; }
+body { background: rgb(var(--background)); color: rgb(var(--foreground)); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
-::selection { background: rgba(61, 214, 140, 0.28); color: #fff; }
+::selection { background: rgb(var(--success) / 0.28); color: #fff; }
 
 /* scrollbar institucional */
-* { scrollbar-width: thin; scrollbar-color: #232A36 transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--color-border) transparent; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
-*::-webkit-scrollbar-thumb { background: #232A36; border-radius: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
 
 /* Magic UI animated-gradient-text (MIT) — wordmark IQOperator */

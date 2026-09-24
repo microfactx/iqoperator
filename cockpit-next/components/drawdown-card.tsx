@@ -1,10 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { Area, AreaChart, ResponsiveContainer, Tooltip, YAxis } from "recharts"
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { cn } from "@/lib/utils"
+import { ChartTooltip } from "@/components/ui/chart-tooltip"
 
 interface EquityPoint {
+  trade: number
   i: number
   equity: number
 }
@@ -25,7 +27,7 @@ export function DrawdownCard({ trades, className }: { trades: any[]; className?:
 
     chrono.forEach((t, idx) => {
       acc += toNum(t?.profit)
-      pts.push({ i: idx + 1, equity: Math.round(acc * 100) / 100 })
+      pts.push({ trade: idx + 1, i: idx + 1, equity: Math.round(acc * 100) / 100 })
       if (acc > runningPeak) runningPeak = acc
       const dd = runningPeak - acc
       if (dd > maxDrawdown) {
@@ -60,21 +62,25 @@ export function DrawdownCard({ trades, className }: { trades: any[]; className?:
         <div className="flex flex-col gap-3">
           <div className="h-[120px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={points} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+              <AreaChart
+                data={points}
+                syncId="cockpit-session"
+                margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
+              >
+                <XAxis dataKey="trade" hide />
                 <YAxis hide domain={["auto", "auto"]} />
                 <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#151A23",
-                    border: "1px solid #232A36",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                  labelFormatter={(v) => `Trade #${v}`}
-                  formatter={(value) => [`${Number(value).toFixed(2)}`, "Equity acum."]}
+                  content={
+                    <ChartTooltip
+                      labelFormatter={(v) => `Trade #${v}`}
+                      valueFormatter={(value) => `${Number(value).toFixed(2)}`}
+                    />
+                  }
                 />
                 <Area
                   type="monotone"
                   dataKey="equity"
+                  name="Equity acum."
                   stroke="#818CF8"
                   strokeWidth={2}
                   fill="#818CF8"
@@ -99,9 +105,9 @@ export function DrawdownCard({ trades, className }: { trades: any[]; className?:
               <div className="text-muted mono text-[11px] mt-0.5">{currentDDPct.toFixed(1)}%</div>
             </div>
             <div className="bg-background/60 rounded p-2">
-              <div className="text-muted mb-1">Pico</div>
+              <div className="text-muted mb-1">Pico histórico</div>
               <div className="font-bold mono text-base text-success">+{peak.toFixed(2)}</div>
-              <div className="text-muted mono text-[11px] mt-0.5">equity máx</div>
+              <div className="text-muted mono text-[11px] mt-0.5">{points.length} trades</div>
             </div>
           </div>
         </div>

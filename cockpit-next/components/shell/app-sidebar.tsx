@@ -8,6 +8,7 @@ import {
   ShieldAlert,
   Zap,
   History,
+  BarChart3,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
@@ -17,9 +18,10 @@ import { Brand, LogoMark } from "@/components/brand/logo";
 const NAV = [
   { href: "#visao-geral", label: "Visão geral", Icon: LayoutDashboard },
   { href: "#equity", label: "Equity", Icon: ChartCandlestick },
-  { href: "#desempenho", label: "Desempenho", Icon: Trophy },
-  { href: "#risco", label: "Risco", Icon: ShieldAlert },
   { href: "#operacao", label: "Operação", Icon: Zap },
+  { href: "#desempenho", label: "Desempenho", Icon: Trophy },
+  { href: "#analise", label: "Ativos", Icon: BarChart3 },
+  { href: "#risco", label: "Risco", Icon: ShieldAlert },
   { href: "#historico", label: "Histórico", Icon: History },
 ] as const;
 

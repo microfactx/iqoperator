@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   Zap,
   History,
+  BarChart3,
   ArrowUpRight,
   ArrowDownRight,
   Copy,
@@ -30,14 +31,24 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { label: "Visão geral", hash: "#visao-geral", icon: LayoutDashboard },
   { label: "Equity", hash: "#equity", icon: ChartCandlestick },
-  { label: "Desempenho", hash: "#desempenho", icon: Trophy },
-  { label: "Risco", hash: "#risco", icon: ShieldAlert },
   { label: "Operação", hash: "#operacao", icon: Zap },
+  { label: "Desempenho", hash: "#desempenho", icon: Trophy },
+  { label: "Ativos & Deep-Dive", hash: "#analise", icon: BarChart3 },
+  { label: "Risco", hash: "#risco", icon: ShieldAlert },
   { label: "Histórico", hash: "#historico", icon: History },
 ];
 
 function goTo(hash: string) {
-  document.querySelector(hash)?.scrollIntoView({ behavior: "smooth" });
+  if (typeof window !== "undefined") {
+    if (window.location.hash === hash) {
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    } else {
+      window.location.hash = hash;
+    }
+    setTimeout(() => {
+      document.querySelector(hash)?.scrollIntoView({ behavior: "smooth" });
+    }, 60);
+  }
 }
 
 async function buildSessionSummary(): Promise<string> {
