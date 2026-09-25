@@ -23,6 +23,7 @@ import config as cfg
 from strategies import get_signal, rsi_series
 from kelly import kelly_fraction_stake, empirical_winrate
 from hf_sync import sync_file
+from homeostasis import HomeostasisManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,6 +45,10 @@ class Bot:
         # voo e geram 'NoneType is_ssl' / corridas no websocket.
         self._api_lock = threading.Lock()
         self._last_connect_ts = 0.0
+        self.is_healing = False
+        self._healing_started_ts = 0.0
+        self.homeostasis = HomeostasisManager(self)
+        self.homeostasis.patch_api(self.api)
         _orig_connect = self.api.connect
 
         def _locked_connect(*a, **k):
@@ -53,7 +58,7 @@ class Bot:
             with self._api_lock:
                 wait = 15.0 - (time.time() - self._last_connect_ts)
                 if wait > 0:
-                    time.sleep(wait)
+                    self.homeostasis.sleep_with_heartbeat(wait)
                 try:
                     return _orig_connect(*a, **k)
                 finally:
@@ -87,8 +92,7 @@ class Bot:
         self._load_pending()
 
     # ---------- chamadas com timeout ----------
-    @staticmethod
-    def _call_timeout(fn, timeout: float, label: str):
+    def _call_timeout(self, fn, timeout: float, label: str):
         """Roda fn() com prazo; estourou -> (False, 'TIMEOUT...'). Nunca trava o loop."""
         import queue
         q: queue.Queue = queue.Queue()
@@ -99,25 +103,44 @@ class Bot:
             except Exception as e:  # noqa: BLE001
                 q.put((False, f"{type(e).__name__}: {e}"))
 
+        was_healing = getattr(self, "is_healing", False)
         t = threading.Thread(target=_w, daemon=True)
         t.start()
         t.join(timeout)
         if t.is_alive():
+            # Se a chamada disparou homeostase de cura, aguarda a cura concluir com heartbeat.
+            # health_ping tem timeout estrito de integridade e nunca aguarda cura.
+            # Chamadas iniciadas quando a cura já estava ativa também não aguardam recursivamente.
+            if not was_healing and getattr(self, "is_healing", False) and label != "health_ping":
+                log.info(f"{label}: chamada ativou estado de cura — aguardando conclusão...")
+                wait_start = time.time()
+                while t.is_alive() and getattr(self, "is_healing", False) and (time.time() - wait_start < 600.0):
+                    self._touch_progress()
+                    t.join(1.0)
+                if t.is_alive():
+                    t.join(2.0)
+        if t.is_alive():
             return False, f"TIMEOUT após {timeout:.0f}s em {label}"
         try:
-            return q.get_nowait()
+            return q.get(timeout=0.5)
         except Exception:
             return False, f"sem resposta em {label}"
 
     def _safe_balance(self, timeout: float = 20) -> float:
         if self._last_balance is not None and time.time() - self._balance_ts < cfg.BALANCE_TTL:
             return self._last_balance
-        ok, res = self._call_timeout(lambda: float(self.api.get_balance() or 0),
-                                     timeout, "get_balance")
-        if ok:
-            self._last_balance = res
+
+        def _fetch():
+            bal = self.api.get_balance()
+            if bal is None or not isinstance(bal, (int, float)):
+                raise ValueError(f"get_balance retornou valor inválido: {bal}")
+            return float(bal)
+
+        ok, res = self._call_timeout(_fetch, timeout, "get_balance")
+        if ok and isinstance(res, (int, float)):
+            self._last_balance = float(res)
             self._balance_ts = time.time()
-            return res
+            return self._last_balance
         log.warning(f"get_balance falhou ({res}); usando último conhecido.")
         return self._last_balance or 0.0
 
@@ -128,6 +151,17 @@ class Bot:
         def _w():
             while True:
                 time.sleep(30)
+                if getattr(self, "is_healing", False):
+                    healing_started = getattr(self, "_healing_started_ts", 0.0)
+                    if healing_started <= 0.0:
+                        self._healing_started_ts = time.time()
+                        healing_started = self._healing_started_ts
+                    if (time.time() - healing_started) > 600.0:
+                        log.error(f"WATCHDOG: processo travado em estado de cura há {time.time() - healing_started:.0f}s — reiniciando processo.")
+                        os._exit(1)
+                    log.info("WATCHDOG: Sistema em estado de cura autonômica — mantendo processo ativo.")
+                    self._touch_progress()
+                    continue
                 idle = time.time() - self._last_progress
                 if idle > cfg.WATCHDOG_TIMEOUT:
                     log.error(f"WATCHDOG: sem progresso há {idle:.0f}s — reiniciando processo.")
@@ -188,37 +222,45 @@ class Bot:
     # ---------- conexão ----------
     def connect(self) -> bool:
         for attempt in range(1, 6):
+            self._touch_progress()
             try:
                 ok, reason = self.api.connect()
                 if ok:
+                    self.homeostasis.patch_api(self.api)
                     self.api.change_balance(cfg.BALANCE_TYPE)
-                    log.info(f"Conectado | Conta: {cfg.BALANCE_TYPE} | Saldo: {self.api.get_balance()}")
+                    bal = self.api.get_balance()
+                    log.info(f"Conectado | Conta: {cfg.BALANCE_TYPE} | Saldo: {bal}")
+                    try:
+                        if hasattr(self.api, "update_ACTIVES_OPCODE"):
+                            self.api.update_ACTIVES_OPCODE()
+                    except Exception as e:
+                        log.warning(f"update_ACTIVES_OPCODE falhou (tent. {attempt}): {e}")
                     return True
                 log.warning(f"Connect falhou (tent. {attempt}): {reason}")
             except Exception as e:
                 log.warning(f"Connect exceção (tent. {attempt}): {e}")
-            time.sleep(30 * attempt)
+            self.homeostasis.sleep_with_heartbeat(min(5 * attempt, 30))
         return False
 
-    def ensure_connected(self) -> bool:
+    def verify_connection(self) -> bool:
+        """Ping real de conexão para validar se o websocket e a sessão estão operantes."""
         try:
-            if self.api.check_connect():
-                # Fix 2: ping real — check_connect() pode retornar True com WS morto
-                ok, _ = self._call_timeout(
-                    lambda: self.api.get_balance(), 10, "health_ping")
-                if ok:
-                    return True
-                log.warning("check_connect()=True mas health_ping falhou — WS degradado.")
+            if not self.api.check_connect():
+                return False
+            ok, res = self._call_timeout(
+                lambda: self.api.get_balance(), 10, "health_ping")
+            return bool(ok and res is not None and isinstance(res, (int, float)))
         except Exception:
-            pass
-        log.warning("Conexão perdida, reconectando...")
-        if self._hard_reconnect_count >= 2:
-            # Já tentou reconectar demais nesta sessão sem sucesso; restart limpo
-            log.error("Múltiplas reconexões falharam — forçando restart.")
-            os._exit(1)
-        if not self.connect():
-            return self._hard_reconnect()
-        return True
+            return False
+
+    def ensure_connected(self) -> bool:
+        if getattr(self, "is_healing", False):
+            return self.homeostasis.heal(reason="ensure_connected aguardando cura em andamento")
+        if self.verify_connection():
+            self._touch_progress()
+            return True
+        log.warning("Conexão perdida, acionando homeostase de reconexão...")
+        return self.homeostasis.heal(reason="ensure_connected verify_connection falhou")
 
     # Fix 3: reconexão destrutiva — recria a instância da API do zero
     def _hard_reconnect(self) -> bool:
@@ -226,7 +268,13 @@ class Bot:
         self._hard_reconnect_count += 1
         log.warning(f"HARD RECONNECT #{self._hard_reconnect_count}: recriando instância da API")
         try:
-            self.api.close()
+            if hasattr(self.api, "api"):
+                if hasattr(self.api.api, "websocket") and hasattr(self.api.api.websocket, "close"):
+                    self.api.api.websocket.close()
+                if hasattr(self.api.api, "websocket_thread") and hasattr(self.api.api.websocket_thread, "join"):
+                    self.api.api.websocket_thread.join(timeout=2.0)
+            elif hasattr(self.api, "close"):
+                self.api.close()
         except Exception:
             pass
         self.api = IQ_Option(cfg.EMAIL, cfg.PASSWORD)
@@ -236,13 +284,14 @@ class Bot:
             with self._api_lock:
                 wait = 15.0 - (time.time() - self._last_connect_ts)
                 if wait > 0:
-                    time.sleep(wait)
+                    self.homeostasis.sleep_with_heartbeat(wait)
                 try:
                     return _orig_connect(*a, **k)
                 finally:
                     self._last_connect_ts = time.time()
 
         self.api.connect = _locked_connect  # type: ignore[method-assign]
+        self.homeostasis.patch_api(self.api)
         return self.connect()
 
     # ---------- dados ----------
@@ -251,11 +300,15 @@ class Bot:
         # A lib entra em `while True + reconnect` se a conexão cair no meio do
         # get_candles — sem timeout, 1 ativo congela o scan inteiro (e o heartbeat).
         # Roda com prazo: estourou, pula o ativo neste ciclo.
+        self._touch_progress()
         ok, res = self._call_timeout(
-            lambda: self.api.get_candles(asset, timeframe, count, time.time()),
-            timeout, f"get_candles {asset}")
+            lambda: self.api.get_candles(asset, timeframe, count, time.time(), timeout=timeout),
+            timeout + 2.0, f"get_candles {asset}")
+        self._touch_progress()
         if not ok:
             self._note_candle_fail(asset, str(res))
+            if "need reconnect" in str(res).lower() or "timeout" in str(res).lower():
+                self.homeostasis.heal(reason=f"candles_df {asset}: {res}")
             return None
         candles = res
         if not candles:
@@ -271,10 +324,12 @@ class Bot:
 
     def _fetch_detail(self):
         """get_binary_option_detail com cache de 120s (a chamada é lenta/instável)."""
+        self._touch_progress()
         ts, cached = self._detail_cache
         if cached is not None and time.time() - ts < 120:
             return cached
-        ok, detail = self._call_timeout(self.api.get_binary_option_detail, 90, "get_all_init")
+        ok, detail = self._call_timeout(self.api.get_binary_option_detail, 30, "get_all_init")
+        self._touch_progress()
         if not ok:
             log.warning(f"detail fallback: {detail}")
             return cached  # usa último conhecido (pode ser None)
@@ -345,11 +400,15 @@ class Bot:
 
     def _poll_pending(self, order: dict) -> float | None:
         """Uma consulta pontual de resultado; None = ainda pendente/desconhecido."""
+        self._touch_progress()
         ok, res = self._call_timeout(
-            lambda: self.api.get_betinfo(order["order_id"]), 30,
+            lambda: self.api.get_betinfo(order["order_id"], timeout=10.0), 12,
             f"get_betinfo {order['order_id']}")
+        self._touch_progress()
         if not ok:
             log.warning(f"get_betinfo id={order['order_id']}: {res}")
+            if "need reconnect" in str(res).lower() or "timeout" in str(res).lower():
+                self.homeostasis.heal(reason=f"_poll_pending {order['order_id']}: {res}")
             return None
         try:
             ok2, data = res
@@ -377,6 +436,7 @@ class Bot:
 
     def _reconcile_pending(self):
         for order in list(self.pending):
+            self._touch_progress()
             profit = self._poll_pending(order)
             if profit is not None:
                 self.pending.remove(order)
@@ -556,20 +616,25 @@ class Bot:
         try:
             while True:
                 try:
+                    self._touch_progress()
                     if self.stop():
                         break
                     if not self.ensure_connected():
-                        time.sleep(120)
-                        continue
+                        log.error("HOMEOSTASE: Conexão não restabelecida após ciclo de cura — reiniciando processo.")
+                        os._exit(1)
                     self._write_status()
                     if time.time() < self._quiet_until:
                         # disjuntor global: silêncio total p/ resetar o throttle
-                        time.sleep(15)
+                        left = self._quiet_until - time.time()
+                        log.info(f"Disjuntor ativo: {left:.0f}s restantes de silêncio.")
+                        self.homeostasis.sleep_with_heartbeat(min(15.0, max(1.0, left)))
+                        self._touch_progress()
                         continue
                     detail = self._fetch_detail()
                     if detail is None:
                         log.info("Sem detail de payout, aguardando.")
-                        time.sleep(60)
+                        self.homeostasis.sleep_with_heartbeat(60.0)
+                        self._touch_progress()
                         continue
                     self._reconcile_pending()
 
@@ -596,6 +661,7 @@ class Bot:
                     subset = self._next_subset()
                     got = 0
                     for i, asset in enumerate(subset):
+                        self._touch_progress()
                         if i:
                             time.sleep(cfg.ASSET_DELAY)
                         if self._in_cooldown(asset):
@@ -663,9 +729,11 @@ class Bot:
                         self._empty_scans += 1
                         self._consecutive_global_fails += 1
                         if self._consecutive_global_fails >= cfg.MAX_GLOBAL_ERRORS:
-                            log.error(f"OUTAGE GLOBAL: {self._consecutive_global_fails} ciclos "
-                                      f"sem dados de nenhum ativo — restart forçado.")
-                            os._exit(1)
+                            log.warning(f"OUTAGE GLOBAL: {self._consecutive_global_fails} ciclos "
+                                        f"sem dados de nenhum ativo — acionando homeostase.")
+                            if not self.homeostasis.heal(reason="outage global de ativos"):
+                                log.error("Homeostase não conseguiu recuperar conexão no outage global — forçando restart.")
+                                os._exit(1)
                         if self._empty_scans >= 3:
                             self._empty_scans = 0
                             self._quiet_until = time.time() + cfg.GLOBAL_COOLDOWN
@@ -674,6 +742,7 @@ class Bot:
                         self._empty_scans = 0
                         self._consecutive_global_fails = 0
                         self._hard_reconnect_count = 0  # conexão saudável, reseta
+                    self._touch_progress()
                     errors = 0
                     time.sleep(cfg.SCAN_SLEEP)
                 except KeyboardInterrupt:
@@ -681,7 +750,8 @@ class Bot:
                 except Exception as e:
                     errors += 1
                     log.error(f"Erro no loop ({errors}): {e}")
-                    time.sleep(min(60 * errors, 300))
+                    self.homeostasis.sleep_with_heartbeat(min(60.0 * errors, 300.0))
+                    self._touch_progress()
         except KeyboardInterrupt:
             log.info("Interrompido pelo usuário.")
         finally:
