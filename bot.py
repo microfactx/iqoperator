@@ -232,9 +232,11 @@ class Bot:
                     log.info(f"Conectado | Conta: {cfg.BALANCE_TYPE} | Saldo: {bal}")
                     try:
                         if hasattr(self.api, "update_ACTIVES_OPCODE"):
-                            self.api.update_ACTIVES_OPCODE()
+                            ok, _ = self._call_timeout(self.api.update_ACTIVES_OPCODE, 10.0, "update_ACTIVES_OPCODE")
+                            if not ok:
+                                log.warning(f"update_ACTIVES_OPCODE timeout/erro (tent. {attempt})")
                     except Exception as e:
-                        log.warning(f"update_ACTIVES_OPCODE falhou (tent. {attempt}): {e}")
+                        log.warning(f"update_ACTIVES_OPCODE exceção (tent. {attempt}): {e}")
                     return True
                 log.warning(f"Connect falhou (tent. {attempt}): {reason}")
             except Exception as e:
