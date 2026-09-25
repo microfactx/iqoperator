@@ -119,10 +119,15 @@ class HomeostasisManager:
         return success
 
     def _touch_bot_progress(self):
-        """Atualiza a flag de progresso do bot para sincronização com o Watchdog."""
+        """Atualiza a flag de progresso do bot para sincronização com o Watchdog e mantém o heartbeat do front-end vivo."""
         if hasattr(self.bot, "_touch_progress"):
             try:
                 self.bot._touch_progress()
+            except Exception:
+                pass
+        if hasattr(self.bot, "_write_status"):
+            try:
+                self.bot._write_status()
             except Exception:
                 pass
 
