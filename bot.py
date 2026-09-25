@@ -228,21 +228,48 @@ class Bot:
         for attempt in range(1, 6):
             self._touch_progress()
             try:
-                ok, reason = self.api.connect()
-                if ok:
+                def _do_connect():
+                    ok, reason = self.api.connect()
+                    if not ok:
+                        return False, reason
                     self.homeostasis.patch_api(self.api)
                     self.api.change_balance(cfg.BALANCE_TYPE)
                     bal = self.api.get_balance()
-                    log.info(f"Conectado | Conta: {cfg.BALANCE_TYPE} | Saldo: {bal}")
+                    return True, bal
+
+                ok, res = self._call_timeout(_do_connect, 20.0, f"connect_api_{attempt}")
+                
+                if ok:
                     try:
-                        if hasattr(self.api, "update_ACTIVES_OPCODE"):
-                            ok, _ = self._call_timeout(self.api.update_ACTIVES_OPCODE, 10.0, "update_ACTIVES_OPCODE")
-                            if not ok:
-                                log.warning(f"update_ACTIVES_OPCODE timeout/erro (tent. {attempt})")
-                    except Exception as e:
-                        log.warning(f"update_ACTIVES_OPCODE exceção (tent. {attempt}): {e}")
-                    return True
-                log.warning(f"Connect falhou (tent. {attempt}): {reason}")
+                        ok2, data = res
+                    except (TypeError, ValueError):
+                        ok2, data = False, str(res)
+                        
+                    if ok2:
+                        bal = data
+                        log.info(f"Conectado | Conta: {cfg.BALANCE_TYPE} | Saldo: {bal}")
+                        try:
+                            if hasattr(self.api, "update_ACTIVES_OPCODE"):
+                                ok3, _ = self._call_timeout(self.api.update_ACTIVES_OPCODE, 10.0, "update_ACTIVES_OPCODE")
+                                if not ok3:
+                                    log.warning(f"update_ACTIVES_OPCODE timeout/erro (tent. {attempt})")
+                        except Exception as e:
+                            log.warning(f"update_ACTIVES_OPCODE exceção (tent. {attempt}): {e}")
+                        return True
+                    else:
+                        log.warning(f"Connect falhou (tent. {attempt}): {data}")
+                else:
+                    log.warning(f"Connect bloqueado/timeout (tent. {attempt}): {res}")
+                    # Se o socket travou a ponto de dar timeout, a API original está corrompida (zombie).
+                    # Forçamos a recriação da instância para a próxima tentativa do loop.
+                    try:
+                        if hasattr(self, "api") and hasattr(self.api, "api") and hasattr(self.api.api, "close"):
+                            self.api.api.close()
+                    except Exception:
+                        pass
+                    from iqoptionapi.stable_api import IQ_Option
+                    self.api = IQ_Option(cfg.IQ_USER, cfg.IQ_PASS)
+
             except Exception as e:
                 log.warning(f"Connect exceção (tent. {attempt}): {e}")
             self.homeostasis.sleep_with_heartbeat(min(5 * attempt, 30))
