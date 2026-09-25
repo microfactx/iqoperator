@@ -1,12 +1,12 @@
-"""Robô IQOption DEMO - Binárias multi-ativo OTC | donchian_fade M15 + Kelly 2%.
+﻿"""RobÃ´ IQOption DEMO - BinÃ¡rias multi-ativo OTC | donchian_fade M15 + Kelly 2%.
 
 - Opera todos os cfg.ASSETS em ciclo sequencial (1 scan ~= todos os ativos).
-- Resultado de trade NÃO bloqueia o loop: posições ficam em self.pending e são
+- Resultado de trade NÃƒO bloqueia o loop: posiÃ§Ãµes ficam em self.pending e sÃ£o
   conciliadas a cada ciclo (_reconcile_pending) via get_betinfo pontual.
-- Trava global: no máximo cfg.MAX_CONCURRENT posições pendentes simultâneas
-  (manual via cockpit bypassa a trava, com log explícito).
-- Log de trades com coluna asset; arquivo legado sem a coluna é preservado
-  como *_legacy.csv e um novo é iniciado.
+- Trava global: no mÃ¡ximo cfg.MAX_CONCURRENT posiÃ§Ãµes pendentes simultÃ¢neas
+  (manual via cockpit bypassa a trava, com log explÃ­cito).
+- Log de trades com coluna asset; arquivo legado sem a coluna Ã© preservado
+  como *_legacy.csv e um novo Ã© iniciado.
 """
 import csv
 import json
@@ -22,7 +22,7 @@ from iqoptionapi.stable_api import IQ_Option
 import config as cfg
 from strategies import get_signal, rsi_series
 from kelly import kelly_fraction_stake, empirical_winrate
-from hf_sync import sync_file
+from hf_sync import sync_file, download_file
 from homeostasis import HomeostasisManager
 from ml_filter import MLFilter
 
@@ -43,7 +43,7 @@ class Bot:
     def __init__(self):
         self.api = IQ_Option(cfg.EMAIL, cfg.PASSWORD)
         # Serializa reconnects: threads abandonadas (timeout) chamam connect() por
-        # conta própria dentro da lib; sem lock elas trocam self.api no meio do
+        # conta prÃ³pria dentro da lib; sem lock elas trocam self.api no meio do
         # voo e geram 'NoneType is_ssl' / corridas no websocket.
         self._api_lock = threading.Lock()
         self._last_connect_ts = 0.0
@@ -54,7 +54,7 @@ class Bot:
         _orig_connect = self.api.connect
 
         def _locked_connect(*a, **k):
-            # Serra autenticação: intervalo mínimo entre handshakes (a lib e as
+            # Serra autenticaÃ§Ã£o: intervalo mÃ­nimo entre handshakes (a lib e as
             # threads zumbis chamam connect() em loop durante outages; sem freio,
             # o martelo de logins toma throttle e derruba a conta).
             with self._api_lock:
@@ -84,7 +84,7 @@ class Bot:
         self._last_balance: float | None = None
         self._balance_ts = 0.0
         self._last_progress = time.time()
-        self._candle_fail: dict[str, list] = {}  # asset -> [falhas_seg, pula_até]
+        self._candle_fail: dict[str, list] = {}  # asset -> [falhas_seg, pula_atÃ©]
         self._asset_cursor = 0
         self._empty_scans = 0
         self._quiet_until = 0.0
@@ -114,9 +114,9 @@ class Bot:
         if t.is_alive():
             # Se a chamada disparou homeostase de cura, aguarda a cura concluir com heartbeat.
             # health_ping tem timeout estrito de integridade e nunca aguarda cura.
-            # Chamadas iniciadas quando a cura já estava ativa também não aguardam recursivamente.
+            # Chamadas iniciadas quando a cura jÃ¡ estava ativa tambÃ©m nÃ£o aguardam recursivamente.
             if not was_healing and getattr(self, "is_healing", False) and label != "health_ping":
-                log.info(f"{label}: chamada ativou estado de cura — aguardando conclusão...")
+                log.info(f"{label}: chamada ativou estado de cura â€” aguardando conclusÃ£o...")
                 wait_start = time.time()
                 while t.is_alive() and getattr(self, "is_healing", False) and (time.time() - wait_start < 600.0):
                     self._touch_progress()
@@ -124,7 +124,7 @@ class Bot:
                 if t.is_alive():
                     t.join(2.0)
         if t.is_alive():
-            return False, f"TIMEOUT após {timeout:.0f}s em {label}"
+            return False, f"TIMEOUT apÃ³s {timeout:.0f}s em {label}"
         try:
             return q.get(timeout=0.5)
         except Exception:
@@ -137,7 +137,7 @@ class Bot:
         def _fetch():
             bal = self.api.get_balance()
             if bal is None or not isinstance(bal, (int, float)):
-                raise ValueError(f"get_balance retornou valor inválido: {bal}")
+                raise ValueError(f"get_balance retornou valor invÃ¡lido: {bal}")
             return float(bal)
 
         ok, res = self._call_timeout(_fetch, timeout, "get_balance")
@@ -145,7 +145,7 @@ class Bot:
             self._last_balance = float(res)
             self._balance_ts = time.time()
             return self._last_balance
-        log.warning(f"get_balance falhou ({res}); usando último conhecido.")
+        log.warning(f"get_balance falhou ({res}); usando Ãºltimo conhecido.")
         return self._last_balance or 0.0
 
     def _touch_progress(self):
@@ -161,18 +161,18 @@ class Bot:
                         self._healing_started_ts = time.time()
                         healing_started = self._healing_started_ts
                     if (time.time() - healing_started) > 600.0:
-                        log.error(f"WATCHDOG: processo travado em estado de cura há {time.time() - healing_started:.0f}s — reiniciando processo.")
+                        log.error(f"WATCHDOG: processo travado em estado de cura hÃ¡ {time.time() - healing_started:.0f}s â€” reiniciando processo.")
                         os._exit(1)
-                    log.info("WATCHDOG: Sistema em estado de cura autonômica — mantendo processo ativo.")
+                    log.info("WATCHDOG: Sistema em estado de cura autonÃ´mica â€” mantendo processo ativo.")
                     self._touch_progress()
                     continue
                 idle = time.time() - self._last_progress
                 if idle > cfg.WATCHDOG_TIMEOUT:
-                    log.error(f"WATCHDOG: sem progresso há {idle:.0f}s — reiniciando processo.")
+                    log.error(f"WATCHDOG: sem progresso hÃ¡ {idle:.0f}s â€” reiniciando processo.")
                     os._exit(1)
         threading.Thread(target=_w, daemon=True).start()
 
-    # ---------- pendências em disco ----------
+    # ---------- pendÃªncias em disco ----------
     def _save_pending(self):
         try:
             os.makedirs(os.path.dirname(cfg.PENDING_FILE) or ".", exist_ok=True)
@@ -191,15 +191,19 @@ class Bot:
             kept = [o for o in orders if isinstance(o, dict) and o.get("deadline", 0) > now]
             dropped = len(orders) - len(kept)
             if dropped:
-                log.warning(f"Descartando {dropped} pendência(s) expirada(s) do restart.")
+                log.warning(f"Descartando {dropped} pendÃªncia(s) expirada(s) do restart.")
             self.pending = kept
             if kept:
-                log.info(f"Recuperadas {len(kept)} pendência(s) do disco.")
+                log.info(f"Recuperadas {len(kept)} pendÃªncia(s) do disco.")
         except Exception as e:
             log.warning(f"load_pending: {e}")
 
     # ---------- log de trades ----------
     def _trade_log_init(self):
+        from hf_sync import download_file
+        if not os.path.exists(cfg.TRADE_LOG):
+            download_file(cfg.TRADE_LOG)
+            
         if not os.path.exists(cfg.TRADE_LOG):
             os.makedirs(os.path.dirname(cfg.TRADE_LOG) or ".", exist_ok=True)
             with open(cfg.TRADE_LOG, "w", newline="", encoding="utf-8") as f:
@@ -207,23 +211,47 @@ class Bot:
             return
         try:
             with open(cfg.TRADE_LOG, encoding="utf-8") as f:
-                header = f.readline().strip().split(",")
+                lines = f.readlines()
+            if not lines:
+                return
+            header = lines[0].strip().split(",")
             if header != TRADE_HEADER:
                 legacy = cfg.TRADE_LOG.replace(".csv", "_legacy.csv")
                 os.rename(cfg.TRADE_LOG, legacy)
                 log.info(f"Trade log legado preservado em {legacy}; iniciando novo com coluna asset.")
                 with open(cfg.TRADE_LOG, "w", newline="", encoding="utf-8") as f:
                     csv.writer(f).writerow(TRADE_HEADER)
+            else:
+                tz_br = timezone(timedelta(hours=-3))
+                today_str = datetime.now(tz_br).strftime("%Y-%m-%d")
+                for row in lines[1:]:
+                    if not row.strip(): continue
+                    cols = row.strip().split(",")
+                    if len(cols) < 9: continue
+                    tstamp, asset, signal, info, payout, p, kfull, stake, profit = cols[:9]
+                    
+                    try:
+                        prof_f = float(profit)
+                        won = prof_f > 0
+                        if asset in self.history:
+                            self.history[asset].append(won)
+                        
+                        # UTC date is close enough
+                        if tstamp.startswith(today_str) or tstamp[:10] == today_str:
+                            if asset in self.asset_profit:
+                                self.asset_profit[asset] += prof_f
+                    except ValueError:
+                        pass
+                log.info(f"Log restaurado: {sum(len(h) for h in self.history.values())} trades em memoria.")
         except Exception as e:
             log.warning(f"trade_log_init: {e}")
-
     def _trade_log(self, row: list):
         with open(cfg.TRADE_LOG, "a", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow(row)
         # sem disco no Railway: espelha no dataset HF (se HF_TOKEN + HF_DATASET_REPO setados)
         sync_file(cfg.TRADE_LOG)
 
-    # ---------- conexão ----------
+    # ---------- conexÃ£o ----------
     def connect(self) -> bool:
         for attempt in range(1, 6):
             self._touch_progress()
@@ -254,14 +282,14 @@ class Bot:
                                 if not ok3:
                                     log.warning(f"update_ACTIVES_OPCODE timeout/erro (tent. {attempt})")
                         except Exception as e:
-                            log.warning(f"update_ACTIVES_OPCODE exceção (tent. {attempt}): {e}")
+                            log.warning(f"update_ACTIVES_OPCODE exceÃ§Ã£o (tent. {attempt}): {e}")
                         return True
                     else:
                         log.warning(f"Connect falhou (tent. {attempt}): {data}")
                 else:
                     log.warning(f"Connect bloqueado/timeout (tent. {attempt}): {res}")
-                    # Se o socket travou a ponto de dar timeout, a API original está corrompida (zombie).
-                    # Forçamos a recriação da instância para a próxima tentativa do loop.
+                    # Se o socket travou a ponto de dar timeout, a API original estÃ¡ corrompida (zombie).
+                    # ForÃ§amos a recriaÃ§Ã£o da instÃ¢ncia para a prÃ³xima tentativa do loop.
                     try:
                         if hasattr(self, "api") and hasattr(self.api, "api") and hasattr(self.api.api, "close"):
                             self.api.api.close()
@@ -271,12 +299,12 @@ class Bot:
                     self.api = IQ_Option(cfg.IQ_USER, cfg.IQ_PASS)
 
             except Exception as e:
-                log.warning(f"Connect exceção (tent. {attempt}): {e}")
+                log.warning(f"Connect exceÃ§Ã£o (tent. {attempt}): {e}")
             self.homeostasis.sleep_with_heartbeat(min(5 * attempt, 30))
         return False
 
     def verify_connection(self) -> bool:
-        """Ping real de conexão para validar se o websocket e a sessão estão operantes."""
+        """Ping real de conexÃ£o para validar se o websocket e a sessÃ£o estÃ£o operantes."""
         try:
             if not self.api.check_connect():
                 return False
@@ -292,14 +320,14 @@ class Bot:
         if self.verify_connection():
             self._touch_progress()
             return True
-        log.warning("Conexão perdida, acionando homeostase de reconexão...")
+        log.warning("ConexÃ£o perdida, acionando homeostase de reconexÃ£o...")
         return self.homeostasis.heal(reason="ensure_connected verify_connection falhou")
 
-    # Fix 3: reconexão destrutiva — recria a instância da API do zero
+    # Fix 3: reconexÃ£o destrutiva â€” recria a instÃ¢ncia da API do zero
     def _hard_reconnect(self) -> bool:
-        """Destrói a API atual e cria uma nova instância limpa."""
+        """DestrÃ³i a API atual e cria uma nova instÃ¢ncia limpa."""
         self._hard_reconnect_count += 1
-        log.warning(f"HARD RECONNECT #{self._hard_reconnect_count}: recriando instância da API")
+        log.warning(f"HARD RECONNECT #{self._hard_reconnect_count}: recriando instÃ¢ncia da API")
         try:
             if hasattr(self.api, "api"):
                 if hasattr(self.api.api, "websocket") and hasattr(self.api.api.websocket, "close"):
@@ -330,8 +358,8 @@ class Bot:
     # ---------- dados ----------
     def candles_df(self, asset: str, timeframe: int, count: int,
                    timeout: float = 30) -> pd.DataFrame | None:
-        # A lib entra em `while True + reconnect` se a conexão cair no meio do
-        # get_candles — sem timeout, 1 ativo congela o scan inteiro (e o heartbeat).
+        # A lib entra em `while True + reconnect` se a conexÃ£o cair no meio do
+        # get_candles â€” sem timeout, 1 ativo congela o scan inteiro (e o heartbeat).
         # Roda com prazo: estourou, pula o ativo neste ciclo.
         self._touch_progress()
         ok, res = self._call_timeout(
@@ -356,7 +384,7 @@ class Bot:
         return df
 
     def _fetch_detail(self):
-        """get_binary_option_detail com cache de 120s (a chamada é lenta/instável)."""
+        """get_binary_option_detail com cache de 120s (a chamada Ã© lenta/instÃ¡vel)."""
         self._touch_progress()
         ts, cached = self._detail_cache
         if cached is not None and time.time() - ts < 120:
@@ -365,7 +393,7 @@ class Bot:
         self._touch_progress()
         if not ok:
             log.warning(f"detail fallback: {detail}")
-            return cached  # usa último conhecido (pode ser None)
+            return cached  # usa Ãºltimo conhecido (pode ser None)
         self._detail_cache = (time.time(), detail)
         return detail
 
@@ -408,7 +436,7 @@ class Bot:
             return stake, p, kfull
         return round(self.current_amount, 2), p, 0.0
 
-    # ---------- execução não-bloqueante ----------
+    # ---------- execuÃ§Ã£o nÃ£o-bloqueante ----------
     def _fire_buy(self, asset: str, action: str, stake: float):
         """Dispara o buy e retorna order dict (sem aguardar resultado)."""
         self.buys_attempted += 1
@@ -432,7 +460,7 @@ class Bot:
                 "signal": None, "info": None, "payout": None, "p": None, "kfull": None}
 
     def _poll_pending(self, order: dict) -> float | None:
-        """Uma consulta assíncrona de resultado; None = ainda pendente/desconhecido."""
+        """Uma consulta assÃ­ncrona de resultado; None = ainda pendente/desconhecido."""
         self._touch_progress()
         order_id = order["order_id"]
         try:
@@ -444,7 +472,7 @@ class Bot:
                 amount = float(msg.get("amount", 0.0))
                 return float(profit_amount - amount)
         except Exception as e:
-            log.warning(f"_poll_pending id={order_id} falhou ao ler dicionário assíncrono: {e}")
+            log.warning(f"_poll_pending id={order_id} falhou ao ler dicionÃ¡rio assÃ­ncrono: {e}")
             return None
         return None
 
@@ -470,7 +498,7 @@ class Bot:
                 self._save_pending()
                 balance_now = self._safe_balance()
                 est = round(balance_now - order["balance_before"], 2)
-                log.warning(f"RESULT_TIMEOUT id={order['order_id']} — sem betinfo; profit estimado via saldo: {est:+.2f}")
+                log.warning(f"RESULT_TIMEOUT id={order['order_id']} â€” sem betinfo; profit estimado via saldo: {est:+.2f}")
                 self._settle(order, est, estimated=True)
 
     # ---------- resultado ----------
@@ -484,7 +512,7 @@ class Bot:
         tag = "WIN" if won else "LOSS"
         wr = empirical_winrate(list(self.history[asset]), cfg.KELLY_PRIOR,
                                prior_weight=cfg.KELLY_PRIOR_WEIGHT)
-        log.info(f"{tag} {asset} {profit:+.2f} | Sessão {self.profit:+.2f} | saldo {balance} | wr {wr:.2f}")
+        log.info(f"{tag} {asset} {profit:+.2f} | SessÃ£o {self.profit:+.2f} | saldo {balance} | wr {wr:.2f}")
         self._trade_log([datetime.now().isoformat(timespec="seconds"), asset, signal,
                          info, round(payout, 4), round(p, 4),
                          kfull, stake, round(profit, 2), balance])
@@ -496,10 +524,10 @@ class Bot:
         if fails >= cfg.CANDLE_FAIL_LIMIT:
             until = time.time() + cfg.CANDLE_COOLDOWN
             self._candle_fail[asset] = [fails, until]
-            log.warning(f"{asset}: {fails} falhas de candles ({reason}) — em cooldown {cfg.CANDLE_COOLDOWN}s.")
+            log.warning(f"{asset}: {fails} falhas de candles ({reason}) â€” em cooldown {cfg.CANDLE_COOLDOWN}s.")
         else:
             self._candle_fail[asset] = [fails, 0.0]
-            log.warning(f"get_candles {asset}: {reason} — pulando ciclo ({fails}/{cfg.CANDLE_FAIL_LIMIT}).")
+            log.warning(f"get_candles {asset}: {reason} â€” pulando ciclo ({fails}/{cfg.CANDLE_FAIL_LIMIT}).")
 
     def _in_cooldown(self, asset: str) -> bool:
         fails, until = self._candle_fail.get(asset, [0, 0.0])
@@ -517,7 +545,7 @@ class Bot:
         return subset
 
     def _candle_key(self, df) -> str:
-        """Chave robusta do último candle (várias versões da API usam 'from'/'at'/etc)."""
+        """Chave robusta do Ãºltimo candle (vÃ¡rias versÃµes da API usam 'from'/'at'/etc)."""
         last = df.iloc[-1]
         for col in ("from", "at", "open_time", "time", "date", "timestamp"):
             if col in df.columns:
@@ -633,7 +661,7 @@ class Bot:
         return self.calc_stake(asset, payout)
 
     def _get_daily_base(self, current_balance: float) -> float:
-        """Carrega ou cria o snapshot diário do saldo (GMT-3)"""
+        """Carrega ou cria o snapshot diÃ¡rio do saldo (GMT-3)"""
         tz_br = timezone(timedelta(hours=-3))
         today_str = datetime.now(tz_br).strftime("%Y-%m-%d")
         
@@ -657,7 +685,7 @@ class Bot:
             with open(cfg.DAILY_META_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f)
             log.info(f"[JUROS COMPOSTOS] Novo dia iniciado ({today_str}). Base atualizada para {current_balance:.2f}")
-            # Zera o profit da sessão para não acumular de dias anteriores
+            # Zera o profit da sessÃ£o para nÃ£o acumular de dias anteriores
             self.profit = 0.0
             for a in self.assets:
                 self.asset_profit[a] = 0.0
@@ -697,7 +725,7 @@ class Bot:
             log.error("Configure IQ_EMAIL e IQ_PASSWORD no .env")
             return
         if cfg.BALANCE_TYPE == "REAL" and os.getenv("CONFIRM_REAL") != "YES":
-            log.error("Conta REAL sem CONFIRM_REAL=YES — abortando por segurança. Use PRACTICE.")
+            log.error("Conta REAL sem CONFIRM_REAL=YES â€” abortando por seguranÃ§a. Use PRACTICE.")
             return
         if not self.connect():
             return
@@ -717,13 +745,13 @@ class Bot:
                     if self.stop():
                         break
                     if not self.ensure_connected():
-                        log.error("HOMEOSTASE: Conexão não restabelecida após ciclo de cura — reiniciando processo.")
+                        log.error("HOMEOSTASE: ConexÃ£o nÃ£o restabelecida apÃ³s ciclo de cura â€” reiniciando processo.")
                         os._exit(1)
                     self._write_status()
                     if time.time() < self._quiet_until:
-                        # disjuntor global: silêncio total p/ resetar o throttle
+                        # disjuntor global: silÃªncio total p/ resetar o throttle
                         left = self._quiet_until - time.time()
-                        log.info(f"Disjuntor ativo: {left:.0f}s restantes de silêncio.")
+                        log.info(f"Disjuntor ativo: {left:.0f}s restantes de silÃªncio.")
                         self.homeostasis.sleep_with_heartbeat(min(15.0, max(1.0, left)))
                         self._touch_progress()
                         continue
@@ -741,7 +769,7 @@ class Bot:
                         asset = manual["asset"]
                         payout = self.get_payout(asset, detail)
                         if payout < cfg.PAYOUT_MIN:
-                            log.info(f"MANUAL {asset} ignorado: payout {payout:.2f} < mínimo.")
+                            log.info(f"MANUAL {asset} ignorado: payout {payout:.2f} < mÃ­nimo.")
                         else:
                             stake, p, kfull = self._manual_stake(asset, payout, manual["stake"])
                             order = self._fire_buy(asset, manual["signal"], stake)
@@ -768,7 +796,7 @@ class Bot:
                             continue
                         df = self.candles_df(asset, cfg.TIMEFRAME, cfg.CANDLE_COUNT)
                         if df is None or df.empty:
-                            log.warning(f"Sem candles ({asset} M{cfg.EXPIRATION}) — aguardando.")
+                            log.warning(f"Sem candles ({asset} M{cfg.EXPIRATION}) â€” aguardando.")
                             continue
                         got += 1
                         candle_key = self._candle_key(df)
@@ -776,7 +804,7 @@ class Bot:
                             continue
                         self.last_candle_key[asset] = candle_key
                         if candle_key.startswith("noclock:"):
-                            log.warning(f"{asset}: coluna de tempo ausente nos candles — avaliando sem dedup por candle.")
+                            log.warning(f"{asset}: coluna de tempo ausente nos candles â€” avaliando sem dedup por candle.")
 
                         df_h1 = None
                         if cfg.STRATEGY == "rsi_mtf_pullback":
@@ -836,18 +864,18 @@ class Bot:
                         self._consecutive_global_fails += 1
                         if self._consecutive_global_fails >= cfg.MAX_GLOBAL_ERRORS:
                             log.warning(f"OUTAGE GLOBAL: {self._consecutive_global_fails} ciclos "
-                                        f"sem dados de nenhum ativo — acionando homeostase.")
+                                        f"sem dados de nenhum ativo â€” acionando homeostase.")
                             if not self.homeostasis.heal(reason="outage global de ativos"):
-                                log.error("Homeostase não conseguiu recuperar conexão no outage global — forçando restart.")
+                                log.error("Homeostase nÃ£o conseguiu recuperar conexÃ£o no outage global â€” forÃ§ando restart.")
                                 os._exit(1)
                         if self._empty_scans >= 3:
                             self._empty_scans = 0
                             self._quiet_until = time.time() + cfg.GLOBAL_COOLDOWN
-                            log.warning(f"Disjuntor global: 3 scans sem candles — silêncio de {cfg.GLOBAL_COOLDOWN}s p/ resetar o throttle.")
+                            log.warning(f"Disjuntor global: 3 scans sem candles â€” silÃªncio de {cfg.GLOBAL_COOLDOWN}s p/ resetar o throttle.")
                     else:
                         self._empty_scans = 0
                         self._consecutive_global_fails = 0
-                        self._hard_reconnect_count = 0  # conexão saudável, reseta
+                        self._hard_reconnect_count = 0  # conexÃ£o saudÃ¡vel, reseta
                     self._touch_progress()
                     errors = 0
                     time.sleep(cfg.SCAN_SLEEP)
@@ -859,9 +887,10 @@ class Bot:
                     self.homeostasis.sleep_with_heartbeat(min(60.0 * errors, 300.0))
                     self._touch_progress()
         except KeyboardInterrupt:
-            log.info("Interrompido pelo usuário.")
+            log.info("Interrompido pelo usuÃ¡rio.")
         finally:
             try:
-                log.info(f"FIM Sessão {self.profit:.2f} | Saldo {self._safe_balance()}")
+                log.info(f"FIM SessÃ£o {self.profit:.2f} | Saldo {self._safe_balance()}")
             except Exception:
-                log.info(f"FIM Sessão {self.profit:.2f}")
+                log.info(f"FIM SessÃ£o {self.profit:.2f}")
+

@@ -47,3 +47,38 @@ def sync_file(local_path: str, repo_path: str | None = None):
             log.warning(f"[HF SYNC] falhou {local_path}: {e}")
 
     threading.Thread(target=_do, daemon=True).start()
+
+def download_file(local_path: str, repo_path: str | None = None) -> bool:
+    if not _configured():
+        return False
+    repo_path = repo_path or os.path.basename(local_path)
+    token = os.getenv("HF_TOKEN", "")
+    repo_id = os.getenv("HF_DATASET_REPO", "")
+    try:
+        from huggingface_hub import hf_hub_download
+        os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
+        dl_path = hf_hub_download(repo_id=repo_id, filename=repo_path, repo_type="dataset", token=token)
+        import shutil
+        shutil.copy(dl_path, local_path)
+        log.info(f"[HF SYNC] {repo_id}/{repo_path} baixado p/ {local_path}")
+        return True
+    except Exception as e:
+        log.warning(f"[HF SYNC] Nao foi possivel baixar {repo_path}: {e}")
+        return False
+    repo_path = repo_path or os.path.basename(local_path)
+    token = os.getenv("HF_TOKEN", "")
+    repo_id = os.getenv("HF_DATASET_REPO", "")
+    try:
+        from huggingface_hub import hf_hub_download
+        os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
+        dl_path = hf_hub_download(repo_id=repo_id, filename=repo_path, repo_type="dataset", token=token)
+        import shutil
+        shutil.copy(dl_path, local_path)
+        log.info(f"[HF SYNC] {repo_id}/{repo_path} baixado p/ {local_path}")
+        return True
+    except Exception as e:
+        log.warning(f"[HF SYNC] Nao foi possivel baixar {repo_path}: {e}")
+        return False
+
+
+
