@@ -4,7 +4,7 @@ import { Workflow } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type StrategyConfigProps = {
-  bot: { strategy?: string; asset?: string; balance_type?: string } | null;
+  bot: { strategy?: string; asset?: string; balance_type?: string; ml_filter_status?: string } | null;
 };
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -18,11 +18,13 @@ function Row({ label, value }: { label: string; value: string }) {
 
 export function StrategyConfig({ bot }: StrategyConfigProps) {
   const strategy = bot?.strategy?.trim() ? bot.strategy : "donchian_fade";
+  const mlFilter = bot?.ml_filter_status?.trim() ? bot.ml_filter_status : "OFF";
   const asset = bot?.asset?.trim() ? bot.asset : "BTCUSD";
   const account = bot?.balance_type?.trim() ? bot.balance_type : "PRACTICE";
 
   const rows: Array<{ label: string; value: string }> = [
     { label: "Estratégia", value: strategy },
+    { label: "Filtro Preditivo ML", value: mlFilter },
     { label: "Ativo", value: asset },
     { label: "Conta", value: account },
     { label: "Timeframe", value: "M15" },

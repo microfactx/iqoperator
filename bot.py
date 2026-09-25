@@ -432,31 +432,20 @@ class Bot:
                 "signal": None, "info": None, "payout": None, "p": None, "kfull": None}
 
     def _poll_pending(self, order: dict) -> float | None:
-        """Uma consulta pontual de resultado; None = ainda pendente/desconhecido."""
+        """Uma consulta assíncrona de resultado; None = ainda pendente/desconhecido."""
         self._touch_progress()
-        ok, res = self._call_timeout(
-            lambda: self.api.get_betinfo(order["order_id"], timeout=10.0), 12,
-            f"get_betinfo {order['order_id']}")
-        self._touch_progress()
-        if not ok:
-            log.warning(f"get_betinfo id={order['order_id']}: {res}")
-            if "need reconnect" in str(res).lower() or "timeout" in str(res).lower():
-                self.homeostasis.heal(reason=f"_poll_pending {order['order_id']}: {res}")
-            return None
+        order_id = order["order_id"]
         try:
-            ok2, data = res
-        except (TypeError, ValueError):
+            async_order = self.api.get_async_order(order_id)
+            if async_order and async_order.get("option-closed"):
+                closed_data = async_order["option-closed"]
+                msg = closed_data.get("msg", {})
+                profit_amount = float(msg.get("profit_amount", 0.0))
+                amount = float(msg.get("amount", 0.0))
+                return float(profit_amount - amount)
+        except Exception as e:
+            log.warning(f"_poll_pending id={order_id} falhou ao ler dicionário assíncrono: {e}")
             return None
-        if ok2 and data:
-            try:
-                node = data["result"]["data"][str(order["order_id"])]
-            except KeyError:
-                return None
-            if node.get("win") not in ("", None):
-                try:
-                    return float(node["profit"]) - float(node["deposit"])
-                except (KeyError, TypeError, ValueError):
-                    return None
         return None
 
     def _settle(self, order: dict, profit: float, estimated: bool = False):
@@ -561,6 +550,7 @@ class Bot:
                     "last_payout": self.last_payout.get(a),
                     "last_check": self.last_check.get(a),
                 })
+            ml_tag = f"ON (tau={cfg.ML_THRESHOLD})" if (self.ml_filter and self.ml_filter.is_loaded) else "OFF"
             with open(cfg.BOT_STATUS, "w", encoding="utf-8") as f:
                 json.dump({
                     "last_tick": datetime.now(timezone.utc).isoformat(),
@@ -569,6 +559,7 @@ class Bot:
                     "balance": self._safe_balance() if hasattr(self, 'api') else None,
                     "balance_type": cfg.BALANCE_TYPE,
                     "strategy": cfg.STRATEGY,
+                    "ml_filter_status": ml_tag,
                     "profit_session": round(self.profit, 2),
                     "trades": sum(len(h) for h in self.history.values()),
                     "buys_attempted": self.buys_attempted,
