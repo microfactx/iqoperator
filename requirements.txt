@@ -4,3 +4,5 @@ python-dotenv
 pandas
 numpy
 huggingface_hub
+scikit-learn
+xgboost

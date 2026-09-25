@@ -24,6 +24,8 @@ from strategies import get_signal, rsi_series
 from kelly import kelly_fraction_stake, empirical_winrate
 from hf_sync import sync_file
 from homeostasis import HomeostasisManager
+from ml_filter import MLFilter
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,6 +92,8 @@ class Bot:
         self._hard_reconnect_count = 0
         self._trade_log_init()
         self._load_pending()
+        self.ml_filter = MLFilter(cfg.ML_MODEL_PATH, cfg.ML_THRESHOLD, fail_open=cfg.ML_FAIL_OPEN) if cfg.USE_ML_FILTER else None
+
 
     # ---------- chamadas com timeout ----------
     def _call_timeout(self, fn, timeout: float, label: str):
@@ -609,10 +613,11 @@ class Bot:
             return
         self._start_watchdog()
 
+        ml_tag = f"ON(tau={cfg.ML_THRESHOLD})" if (self.ml_filter and self.ml_filter.is_loaded) else "OFF"
         log.info(f"START multi:{len(self.assets)} {','.join(self.assets)} | {cfg.STRATEGY} "
                  f"RSI({cfg.RSI_PERIOD}) {cfg.RSI_OVERSOLD}/{cfg.RSI_OVERBOUGHT} "
                  f"exit={int(cfg.RSI_REQUIRE_EXIT)} H1_EMA={cfg.HTF_EMA} | Kelly "
-                 f"{cfg.KELLY_FRACTION}x teto {cfg.KELLY_MAX_RISK*100:.0f}% | max_concurrent={cfg.MAX_CONCURRENT}")
+                 f"{cfg.KELLY_FRACTION}x teto {cfg.KELLY_MAX_RISK*100:.0f}% | max_concurrent={cfg.MAX_CONCURRENT} | ML_Filter={ml_tag}")
         errors = 0
 
         try:
@@ -718,7 +723,16 @@ class Bot:
                             log.info(f"SINAL {signal.upper()} {asset} ignorado: cap {cfg.MAX_CONCURRENT} pendentes atingido.")
                             continue
 
+                        # Filtro Preditivo ML (XGBoost tau=0.62)
+                        if self.ml_filter:
+                            allowed, prob = self.ml_filter.filter_signal(df, signal, threshold=cfg.ML_THRESHOLD)
+                            if not allowed:
+                                log.info(f"[ML FILTER] False Breakout detectado, trade cancelado ({asset} {signal.upper()}, prob={prob:.4f} < {cfg.ML_THRESHOLD})")
+                                continue
+                            log.info(f"[ML FILTER] Trade aprovado ({asset} {signal.upper()}, prob={prob:.4f} >= {cfg.ML_THRESHOLD})")
+
                         stake, p, kfull = self.calc_stake(asset, payout)
+
                         log.info(f"SINAL {signal.upper()} {asset} {info} payout={payout:.2f} "
                                  f"p={p:.2f} kelly={kfull:.3f} stake={stake:.2f}")
                         order = self._fire_buy(asset, signal, stake)

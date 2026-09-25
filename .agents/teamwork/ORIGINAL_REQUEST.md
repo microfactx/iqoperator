@@ -43,3 +43,59 @@ A equipe deve obrigatoriamente usar o ambiente de alta densidade semântica para
 - [ ] O sistema identifica falhas de socket/websocket da IQOption e aciona rotina de `reconnect()` ou `connect()`.
 - [ ] O Watchdog não derruba a aplicação se ela estiver em loop controlado de reconexão (progress flag atualizada).
 - [ ] O bot retoma o polling das 6 moedas assim que a conexão é restabelecida com sucesso.
+
+## 2026-09-25T02:37:35Z
+
+Projeto Híbrido de Transcendência: Integrar um modelo de Machine Learning (Classificação) como camada de inteligência (filtro preditivo) sobre os sinais das estratégias determinísticas atuais (`donchian_fade`, `bollinger_touch`). O objetivo é prever a probabilidade de um sinal ser falso/ruído.
+
+Working directory: c:/Users/WDAGUtilityAccount/Downloads/Nova pasta
+
+Integrity mode: development
+
+## Requirements
+
+### R1. Pipeline de Engenharia de Dados e Features
+Carregar o histórico de preços (arquivos `.csv` ou via mock histórico do daemon se não houver `.csv` massivo) e extrair features temporais, técnicas (SMA, StdDev de múltiplos períodos) e a indicação de sinal das estratégias `donchian_fade` e `bollinger_touch`. Criar a variável alvo (Target = 1 se o preço reverteu com lucro na próxima hora, 0 se foi falso rompimento).
+
+### R2. Modelagem Híbrida e Comparação
+Criar um *Jupyter Notebook* (`transcendence_ml_analysis.ipynb`) estruturado contendo a Análise Exploratória (EDA). Treinar e comparar no mínimo um modelo Base (ex: Regressão Logística) e um Avançado (ex: Random Forest/XGBoost). A ordem de featurização deve ser estrita: dividir em treino/teste cronológico **antes** do fit dos scalers/encoders para evitar *lookahead bias*.
+
+### R3. Análise em Markdown (ML Best Practices)
+Cada bloco de código de avaliação no Notebook deve ser seguido de uma célula Markdown explicando os resultados matemáticos e o comportamento do modelo, de acordo com as regras restritas da skill `ml-best-practices`.
+
+## Acceptance Criteria
+
+### Integridade do Notebook e Dados
+- [ ] O notebook roda de ponta a ponta sem erros de sintaxe ou de importação de biblioteca (verificável executando todas as células via motor Python).
+- [ ] O *split* de validação do dataset é puramente cronológico (Time Series Split) e não aleatório (verificável via análise da função de split usada).
+
+### Avaliação de Performance
+- [ ] A última célula apresenta uma tabela Markdown final listando o *Precision*, *Recall* e *F1-Score* de todos os modelos avaliados.
+- [ ] A avaliação matemática deve priorizar a métrica de *Precision* (minimização de Falsos Positivos) sobre *Accuracy* global.
+
+## 2026-09-25T04:22:18Z
+
+This is a single self-contained fix; keep it small and focused.
+Integração de Produção: Acoplar o modelo XGBoost (treinado e calibrado com $\tau=0.62$) ao fluxo ao vivo do `bot.py`, atuando como um filtro preditivo para as estratégias determinísticas.
+
+Working directory: c:/Users/WDAGUtilityAccount/Downloads/Nova pasta
+
+Integrity mode: development
+
+## Requirements
+
+### R1. Extração de Pesos e Serialização
+O time deve extrair o modelo XGBoost treinado no notebook `transcendence_ml_analysis.ipynb` (ou rodar um script leve equivalente para gerar o modelo) e serializar os pesos (junto com o StandardScaler) em um artefato estático (ex: `models/xgb_filter.pkl` ou `xgb_filter.json`).
+
+### R2. Acoplamento em Tempo Real (`bot.py`)
+No fluxo de `bot.py`, imediatamente após as estratégias determinísticas emitirem um sinal e antes de disparar a ordem (`api.buy_multi()`), o bot deve calcular o vetor de features do candle atual em tempo real e passá-lo pelo modelo de ML. A ordem só deve ser enviada se a probabilidade predita for $\ge 0.62$. Sinais barrados devem ser logados (ex: `[ML FILTER] False Breakout detectado, trade cancelado`).
+
+### R3. Micro-DSL e Invariantes
+A comunicação de design entre os agentes deve seguir o formato de Context Paging do Synaptic Orchestrator (`MUTATE[mod::fn]{delta} CHECK{inv}`).
+
+## Acceptance Criteria
+
+### Resiliência e Lógica
+- [ ] O arquivo `requirements.txt` foi atualizado com as bibliotecas necessárias para inferência (ex: `scikit-learn`, `xgboost`).
+- [ ] O `bot.py` inicializa normalmente e carrega o modelo em memória sem lentidão excessiva.
+- [ ] Existe um teste automatizado ou script de validação (`check_ml_filter.py`) provando que a função de inferência processa um candle mockado e cospe a probabilidade correta sem quebrar a tipagem.
