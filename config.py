@@ -77,6 +77,13 @@ KELLY_PAYOUT_DEFAULT = _get_float("KELLY_PAYOUT_DEFAULT", 0.87)
 
 STOP_WIN = _get_float("IQ_STOP_WIN", 50.0)
 STOP_LOSS = _get_float("IQ_STOP_LOSS", 30.0)
+
+# Metas de Juros Compostos (% do saldo inicial do dia)
+COMPOUND_META_DAILY = _get_float("COMPOUND_META_DAILY", 0.0)
+COMPOUND_LOSS_DAILY = _get_float("COMPOUND_LOSS_DAILY", 0.0)
+
+# Caminho para armazenar o snapshot do saldo diário
+DAILY_META_FILE = os.getenv("DAILY_META_FILE", "data/daily_meta.json")
 MAX_MARTINGALE = _get_int("IQ_MAX_MARTINGALE", 2)
 MARTINGALE_MULTIPLIER = _get_float("IQ_MARTINGALE_MULTIPLIER", 2.0)
 

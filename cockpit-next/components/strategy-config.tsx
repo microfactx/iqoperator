@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { Workflow } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type StrategyConfigProps = {
-  bot: { strategy?: string; asset?: string; balance_type?: string; ml_filter_status?: string } | null;
+  bot: { strategy?: string; asset?: string; balance_type?: string; ml_filter_status?: string; win_target?: number; loss_target?: number; is_compound?: boolean } | null;
 };
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -22,6 +22,10 @@ export function StrategyConfig({ bot }: StrategyConfigProps) {
   const asset = bot?.asset?.trim() ? bot.asset : "BTCUSD";
   const account = bot?.balance_type?.trim() ? bot.balance_type : "PRACTICE";
 
+  const winTarget = bot?.win_target ? "+" + bot.win_target : "+50";
+  const lossTarget = bot?.loss_target ? "-" + bot.loss_target : "-30";
+  const targetLabel = bot?.is_compound ? "(Juros Compostos)" : "";
+
   const rows: Array<{ label: string; value: string }> = [
     { label: "Estratégia", value: strategy },
     { label: "Filtro Preditivo ML", value: mlFilter },
@@ -31,8 +35,8 @@ export function StrategyConfig({ bot }: StrategyConfigProps) {
     { label: "Expiração", value: "15 min" },
     { label: "Payout mínimo", value: "≥ 0.80" },
     { label: "Kelly", value: "quarter 0.25 · teto 2%" },
-    { label: "Stop-win", value: "+50" },
-    { label: "Stop-loss", value: "−30" },
+    { label: "Stop-win " + targetLabel, value: winTarget },
+    { label: "Stop-loss " + targetLabel, value: lossTarget },
     { label: "Martingale", value: "desligado" },
   ];
 

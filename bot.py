@@ -15,7 +15,7 @@ import os
 import threading
 import time
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pandas as pd
 from iqoptionapi.stable_api import IQ_Option
 
@@ -551,6 +551,24 @@ class Bot:
                     "last_check": self.last_check.get(a),
                 })
             ml_tag = f"ON (tau={cfg.ML_THRESHOLD})" if (self.ml_filter and self.ml_filter.is_loaded) else "OFF"
+            
+            balance_now = self._safe_balance() if hasattr(self, 'api') else 0.0
+            start_balance = self._get_daily_base(balance_now)
+            
+            if cfg.COMPOUND_META_DAILY > 0:
+                win_target = start_balance * (cfg.COMPOUND_META_DAILY / 100.0)
+                is_compound = True
+                display_profit = balance_now - start_balance
+            else:
+                win_target = cfg.STOP_WIN
+                is_compound = False
+                display_profit = self.profit
+                
+            if cfg.COMPOUND_LOSS_DAILY > 0:
+                loss_target = start_balance * (cfg.COMPOUND_LOSS_DAILY / 100.0)
+            else:
+                loss_target = cfg.STOP_LOSS
+                
             with open(cfg.BOT_STATUS, "w", encoding="utf-8") as f:
                 json.dump({
                     "last_tick": datetime.now(timezone.utc).isoformat(),
@@ -560,7 +578,10 @@ class Bot:
                     "balance_type": cfg.BALANCE_TYPE,
                     "strategy": cfg.STRATEGY,
                     "ml_filter_status": ml_tag,
-                    "profit_session": round(self.profit, 2),
+                    "profit_session": round(display_profit, 2),
+                    "win_target": round(win_target, 2),
+                    "loss_target": round(loss_target, 2),
+                    "is_compound": is_compound,
                     "trades": sum(len(h) for h in self.history.values()),
                     "buys_attempted": self.buys_attempted,
                     "buys_rejected": self.buys_rejected,
@@ -611,12 +632,63 @@ class Bot:
             log.warning(f"MANUAL stake {want} acima do teto {cap:.2f}; usando Kelly.")
         return self.calc_stake(asset, payout)
 
+    def _get_daily_base(self, current_balance: float) -> float:
+        """Carrega ou cria o snapshot diário do saldo (GMT-3)"""
+        tz_br = timezone(timedelta(hours=-3))
+        today_str = datetime.now(tz_br).strftime("%Y-%m-%d")
+        
+        data = {}
+        if os.path.exists(cfg.DAILY_META_FILE):
+            try:
+                with open(cfg.DAILY_META_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                pass
+
+        if data.get("date") == today_str:
+            return float(data.get("start_balance", current_balance))
+        else:
+            # Virou o dia, salva a nova base de juros compostos
+            data = {
+                "date": today_str,
+                "start_balance": current_balance
+            }
+            os.makedirs(os.path.dirname(cfg.DAILY_META_FILE) or ".", exist_ok=True)
+            with open(cfg.DAILY_META_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            log.info(f"[JUROS COMPOSTOS] Novo dia iniciado ({today_str}). Base atualizada para {current_balance:.2f}")
+            # Zera o profit da sessão para não acumular de dias anteriores
+            self.profit = 0.0
+            for a in self.assets:
+                self.asset_profit[a] = 0.0
+            return current_balance
+
     def stop(self) -> bool:
-        if self.profit >= cfg.STOP_WIN:
-            log.info(f"STOP WIN {self.profit:.2f}")
+        if not hasattr(self, 'api') or not self.api:
+            return False
+            
+        current_balance = self._safe_balance()
+        start_balance = self._get_daily_base(current_balance)
+        
+        if cfg.COMPOUND_META_DAILY > 0:
+            win_target = start_balance * (cfg.COMPOUND_META_DAILY / 100.0)
+            daily_profit = current_balance - start_balance
+        else:
+            win_target = cfg.STOP_WIN
+            daily_profit = self.profit
+            
+        if cfg.COMPOUND_LOSS_DAILY > 0:
+            loss_target = start_balance * (cfg.COMPOUND_LOSS_DAILY / 100.0)
+            loss_profit = current_balance - start_balance
+        else:
+            loss_target = cfg.STOP_LOSS
+            loss_profit = self.profit
+
+        if loss_profit <= -loss_target:
+            log.error(f"Stop loss atingido: profit={loss_profit:.2f} <= limite=-{loss_target:.2f}")
             return True
-        if self.profit <= -cfg.STOP_LOSS:
-            log.info(f"STOP LOSS {self.profit:.2f}")
+        if daily_profit >= win_target:
+            log.info(f"Stop win atingido: profit={daily_profit:.2f} >= meta={win_target:.2f}")
             return True
         return False
 
